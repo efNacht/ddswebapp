@@ -79,8 +79,8 @@ def load_state():
 # Restore state on startup
 load_state()
 
-# Gemini API — key must be set via GEMINI_API_KEY environment variable
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+# Claude API — key must be set via ANTHROPIC_API_KEY environment variable
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 
 # Valid categories for dropdown
 VALID_CATEGORIES = [
@@ -96,35 +96,41 @@ VALID_CATEGORIES = [
 ]
 
 
+def _claude_complete(prompt):
+    """Call Claude Haiku with a prompt, return text response."""
+    import anthropic
+    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    msg = client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=256,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return msg.content[0].text.strip()
+
+
 def gemini_categorize(transactions):
-    """Use Gemini to categorize UNKNOWN transactions."""
+    """Use Claude Haiku to categorize UNKNOWN transactions."""
+    if not ANTHROPIC_API_KEY:
+        return [{"error": "ANTHROPIC_API_KEY not set"}]
     try:
-        from google import genai
-
-        client = genai.Client(api_key=GEMINI_API_KEY)
-
-        # Build context from known transactions
         examples = []
         for t in app_state["categorized"][:50]:
             cat = t.get("predicted_category", "")
             if cat and cat != "UNKNOWN":
                 examples.append(f"  concept='{t.get('concept','')}' desc='{t.get('description','')}' amount={t.get('cargo',0) or t.get('abono',0)} → {cat}")
 
-        categories_str = ", ".join(VALID_CATEGORIES[:-1])  # exclude UNKNOWN
+        categories_str = ", ".join(VALID_CATEGORIES[:-1])
         examples_str = "\n".join(examples[:30])
 
         results = []
         for txn in transactions:
-            prompt = f"""Ты финансовый аналитик компании FL Cosmetics Mexico (дочерняя компания Faberlic).
-Компания: William Roosevelt Buie Jr SA de CV, Santander bank.
-Задача: определи категорию ДДС для банковской транзакции.
+            prompt = f"""Ты финансовый аналитик компании FL Cosmetics Mexico (Faberlic, Santander bank).
+Определи категорию ДДС для транзакции. Допустимые категории: {categories_str}
 
-Допустимые категории: {categories_str}
-
-Примеры размеченных транзакций:
+Примеры:
 {examples_str}
 
-Транзакция для разметки:
+Транзакция:
   Concept: {txn.get('concept', '')}
   Description: {txn.get('description', '')}
   Long description: {txn.get('long_description', '')}
@@ -132,14 +138,9 @@ def gemini_categorize(transactions):
   Abono (приход): {txn.get('abono', 0)}
   Month: {txn.get('month', '')}
 
-Ответь ТОЛЬКО JSON (без markdown): {{"category": "название категории", "confidence": 0.0-1.0, "reason": "краткое объяснение"}}"""
+Ответь ТОЛЬКО JSON (без markdown): {{"category": "название", "confidence": 0.0-1.0, "reason": "кратко"}}"""
 
-            response = client.models.generate_content(
-                model="gemini-2.5-pro",
-                contents=prompt,
-            )
-            text = response.text.strip()
-            # Clean markdown wrapper if present
+            text = _claude_complete(prompt)
             if text.startswith("```"):
                 text = text.split("\n", 1)[1] if "\n" in text else text[3:]
                 if text.endswith("```"):
@@ -159,58 +160,43 @@ def gemini_categorize(transactions):
                     "index": txn.get("_index"),
                     "category": "UNKNOWN",
                     "confidence": 0,
-                    "reason": f"AI parse error: {text[:100]}",
+                    "reason": f"parse error: {text[:80]}",
                 })
-
         return results
     except Exception as e:
         return [{"error": str(e)}]
 
 
 def gemini_anomalies():
-    """Use Gemini to detect anomalies in financial data."""
-    if not app_state["monthly_agg"]:
+    """Use Claude Haiku to detect anomalies in financial data."""
+    if not ANTHROPIC_API_KEY or not app_state["monthly_agg"]:
         return []
-
     try:
-        from google import genai
-
-        client = genai.Client(api_key=GEMINI_API_KEY)
-
         monthly = app_state["monthly_agg"]
-        # Build monthly summary
         summary_lines = []
         for month, cats in sorted(monthly.items()):
-            total_in = sum(d.get("abono", 0) for d in cats.values())
-            total_out = sum(d.get("cargo", 0) for d in cats.values())
+            total_in = sum(d.get("abono", 0) for d in cats.values() if isinstance(d, dict))
+            total_out = sum(d.get("cargo", 0) for d in cats.values() if isinstance(d, dict))
             top_cats = sorted(
-                [(k, v["cargo"]) for k, v in cats.items() if k != "_total" and v.get("cargo", 0) > 0],
+                [(k, v["cargo"]) for k, v in cats.items() if isinstance(v, dict) and v.get("cargo", 0) > 0],
                 key=lambda x: -x[1]
-            )[:5]
+            )[:4]
             top_str = ", ".join(f"{k}={v:,.0f}" for k, v in top_cats)
-            summary_lines.append(f"{month}: доход={total_in:,.0f} расход={total_out:,.0f} | top: {top_str}")
+            summary_lines.append(f"{month}: доход={total_in:,.0f} расход={total_out:,.0f} | {top_str}")
 
-        summary = "\n".join(summary_lines)
+        prompt = f"""Ты финансовый аналитик FL Cosmetics Mexico. Найди до 5 аномалий в данных.
 
-        prompt = f"""Ты финансовый аналитик FL Cosmetics Mexico. Проанализируй помесячные данные и найди аномалии.
+{chr(10).join(summary_lines)}
 
-{summary}
+Аномалии: резкие скачки, необычные суммы, пропуски. Ответь ТОЛЬКО JSON массивом (без markdown):
+[{{"month":"...","type":"spike|drop|missing|unusual","category":"...","description":"кратко по-русски","severity":"high|medium|low"}}]"""
 
-Найди до 5 аномалий: резкие скачки, необычные суммы, пропуски. Ответь ТОЛЬКО JSON массивом (без markdown):
-[{{"month": "...", "type": "spike|drop|missing|unusual", "category": "...", "description": "краткое описание на русском", "severity": "high|medium|low"}}]"""
-
-        response = client.models.generate_content(
-            model="gemini-2.5-pro",
-            contents=prompt,
-        )
-        text = response.text.strip()
+        text = _claude_complete(prompt)
         if text.startswith("```"):
             text = text.split("\n", 1)[1] if "\n" in text else text[3:]
             if text.endswith("```"):
                 text = text[:-3]
-            text = text.strip()
-
-        return json.loads(text)
+        return json.loads(text.strip())
     except Exception as e:
         return [{"type": "error", "description": str(e), "severity": "low"}]
 
@@ -289,7 +275,7 @@ def run_pipeline(bank_path):
     app_state["categorized"] = categorized
 
     # AI categorize UNKNOWNs automatically — non-fatal if Gemini unavailable
-    if GEMINI_API_KEY:
+    if ANTHROPIC_API_KEY:
         unknowns = [t for t in categorized if t.get("predicted_category") == "UNKNOWN"]
         print(f"[PIPELINE] AI categorizing {len(unknowns)} UNKNOWNs...", flush=True)
         if unknowns:
@@ -307,7 +293,7 @@ def run_pipeline(bank_path):
             except Exception as e:
                 print(f"[PIPELINE] AI categorization failed (non-fatal): {e}", flush=True)
     else:
-        print("[PIPELINE] GEMINI_API_KEY not set — skipping AI categorization", flush=True)
+        print("[PIPELINE] ANTHROPIC_API_KEY not set — skipping AI categorization", flush=True)
 
     # Generate reports
     print("[PIPELINE] Generating reports...", flush=True)
