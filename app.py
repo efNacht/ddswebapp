@@ -803,6 +803,82 @@ def api_reports_list():
 # API — Debug / Health
 # ─────────────────────────────────────────────────
 
+@app.route("/api/dashboard/matrix")
+def api_dashboard_matrix():
+    """Category × month expense matrix + top transactions."""
+    if not app_state["has_data"]:
+        return jsonify({"error": "No data"}), 404
+
+    from dds_generator import MONTH_ORDER
+    monthly = app_state["monthly_agg"]
+    categorized = app_state["categorized"]
+
+    sorted_months = sorted(monthly.keys(), key=lambda m: MONTH_ORDER.get(m, 99))
+
+    # Build expense matrix: category → {month → amount}
+    all_cats = set()
+    for cats in monthly.values():
+        all_cats.update(k for k in cats if not k.startswith("_"))
+
+    # Exclude income/transfer categories
+    skip = {"ОП", "Взнос в УК", "Возврат средств", "Внутренний перевод"}
+    expense_cats = sorted(all_cats - skip)
+
+    matrix = {}
+    cat_totals = {}
+    for cat in expense_cats:
+        row = {}
+        total = 0
+        for month in sorted_months:
+            val = monthly[month].get(cat, {})
+            amount = val.get("cargo", 0) if isinstance(val, dict) else 0
+            row[month] = round(amount, 0)
+            total += amount
+        if total > 0:
+            matrix[cat] = row
+            cat_totals[cat] = total
+
+    # Sort by total desc
+    sorted_cats = sorted(matrix.keys(), key=lambda c: -cat_totals[c])
+
+    # Month totals
+    month_totals = {}
+    for month in sorted_months:
+        month_totals[month] = round(sum(
+            monthly[month].get(cat, {}).get("cargo", 0) if isinstance(monthly[month].get(cat, {}), dict) else 0
+            for cat in sorted_cats
+        ), 0)
+
+    # Top 5 single transactions by amount
+    top_txns = sorted(
+        [t for t in categorized if (t.get("cargo") or 0) > 0],
+        key=lambda t: -(t.get("cargo") or 0)
+    )[:5]
+
+    # Monthly income
+    monthly_income = {m: round(sum(
+        d.get("abono", 0) if isinstance(d, dict) else 0
+        for k, d in monthly[m].items() if not k.startswith("_")
+    ), 0) for m in sorted_months}
+
+    return jsonify({
+        "months": sorted_months,
+        "categories": sorted_cats,
+        "matrix": matrix,
+        "cat_totals": {c: round(cat_totals[c], 0) for c in sorted_cats},
+        "month_totals": month_totals,
+        "monthly_income": monthly_income,
+        "top_transactions": [{
+            "date": t.get("date", ""),
+            "description": t.get("description", "")[:60],
+            "concept": t.get("concept", "")[:40],
+            "category": t.get("predicted_category", ""),
+            "amount": t.get("cargo", 0),
+            "month": t.get("month", ""),
+        } for t in top_txns],
+    })
+
+
 @app.route("/api/debug")
 def api_debug():
     """Health check + environment diagnostics."""

@@ -48,16 +48,28 @@
         </div>
     </div>
 
-    <!-- Monthly breakdown -->
+    <!-- Monthly summary table -->
     <div class="chart-card" style="margin-top:16px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-            <h3 style="margin:0">Разбивка по месяцам</h3>
-            <div style="display:flex;gap:8px">
-                <button class="btn btn-sm" id="btnShowIncome" onclick="toggleMonthlyView('income')">Доходы</button>
-                <button class="btn btn-sm active" id="btnShowExpense" onclick="toggleMonthlyView('expense')">Расходы</button>
-            </div>
-        </div>
+        <h3>Итоги по месяцам</h3>
         <div class="table-scroll" id="monthlyBreakdown"></div>
+    </div>
+
+    <!-- Category × Month matrix -->
+    <div class="chart-card" style="margin-top:16px">
+        <h3>Расходы по категориям и месяцам</h3>
+        <div class="table-scroll" id="categoryMatrix" style="max-height:480px"></div>
+    </div>
+
+    <!-- Top transactions + Balance chart -->
+    <div class="charts-grid" style="margin-top:16px">
+        <div class="chart-card">
+            <h3>Крупнейшие расходы</h3>
+            <canvas id="topExpChart"></canvas>
+        </div>
+        <div class="chart-card">
+            <h3>Топ-5 транзакций</h3>
+            <div id="topTxnList"></div>
+        </div>
     </div>
 </div>
 {% endblock %}
@@ -207,46 +219,106 @@ async function loadDashboard() {
     catHtml += '</tbody></table>';
     document.getElementById('categoryTable').innerHTML = catHtml;
 
-    // Monthly breakdown table (expenses by default)
-    window._monthlyData = data.monthly;
-    window._catBreakdown = data.category_breakdown;
-    renderMonthlyBreakdown('expense');
-}
-
-let _monthlyView = 'expense';
-function toggleMonthlyView(view) {
-    _monthlyView = view;
-    document.getElementById('btnShowIncome').classList.toggle('active', view === 'income');
-    document.getElementById('btnShowExpense').classList.toggle('active', view === 'expense');
-    renderMonthlyBreakdown(view);
-}
-
-function renderMonthlyBreakdown(view) {
-    const monthly = window._monthlyData || [];
-    if (!monthly.length) return;
-    const key = view === 'income' ? 'income' : 'expense';
-    const netKey = 'net';
-
-    let html = '<table class="data-table compact"><thead><tr><th>Месяц</th><th class="num">Доход</th><th class="num">Расход</th><th class="num">Поток</th></tr></thead><tbody>';
-    let totInc = 0, totExp = 0, totNet = 0;
+    // Monthly summary table
+    const monthly = data.monthly || [];
+    let mHtml = '<table class="data-table compact"><thead><tr><th>Месяц</th><th class="num">Доход</th><th class="num">Расход</th><th class="num">Поток</th></tr></thead><tbody>';
+    let tI=0, tE=0, tN=0;
     for (const m of monthly) {
-        totInc += m.income; totExp += m.expense; totNet += m.net;
-        const netClass = m.net >= 0 ? 'positive' : 'negative';
-        html += `<tr>
-            <td style="white-space:nowrap">${m.month}</td>
-            <td class="num positive">${formatMXN(m.income)}</td>
-            <td class="num negative">${formatMXN(m.expense)}</td>
-            <td class="num ${netClass}">${formatMXN(m.net)}</td>
-        </tr>`;
+        tI+=m.income; tE+=m.expense; tN+=m.net;
+        mHtml += `<tr><td style="white-space:nowrap">${m.month}</td><td class="num positive">${formatMXN(m.income)}</td><td class="num negative">${formatMXN(m.expense)}</td><td class="num ${m.net>=0?'positive':'negative'}">${formatMXN(m.net)}</td></tr>`;
     }
-    html += `<tr style="font-weight:700;border-top:2px solid var(--border)">
-        <td>ИТОГО</td>
-        <td class="num positive">${formatMXN(totInc)}</td>
-        <td class="num negative">${formatMXN(totExp)}</td>
-        <td class="num ${totNet>=0?'positive':'negative'}">${formatMXN(totNet)}</td>
-    </tr>`;
+    mHtml += `<tr style="font-weight:700;border-top:2px solid var(--border)"><td>ИТОГО</td><td class="num positive">${formatMXN(tI)}</td><td class="num negative">${formatMXN(tE)}</td><td class="num ${tN>=0?'positive':'negative'}">${formatMXN(tN)}</td></tr></tbody></table>`;
+    document.getElementById('monthlyBreakdown').innerHTML = mHtml;
+
+    // Load matrix + top transactions async
+    loadMatrix(d);
+}
+
+async function loadMatrix(d) {
+    const res = await fetch('/api/dashboard/matrix');
+    if (!res.ok) return;
+    const data = await res.json();
+
+    // Category × Month matrix table
+    const months = data.months || [];
+    const cats = data.categories || [];
+    const matrix = data.matrix || {};
+    const shortMonths = months.map(m => m.replace(' 2025','').replace(' 2026',' \'26'));
+
+    let html = '<table class="data-table compact matrix-table"><thead><tr><th style="min-width:160px;position:sticky;left:0;background:var(--surface2)">Категория</th>';
+    shortMonths.forEach(m => { html += `<th class="num">${m}</th>`; });
+    html += '<th class="num" style="background:var(--surface2);position:sticky;right:0">ИТОГО</th></tr></thead><tbody>';
+
+    const maxVal = Math.max(...cats.map(c => data.cat_totals[c] || 0));
+
+    for (const cat of cats) {
+        const total = data.cat_totals[cat] || 0;
+        const intensity = maxVal > 0 ? total / maxVal : 0;
+        html += `<tr><td style="position:sticky;left:0;background:var(--surface);font-weight:500">${cat}</td>`;
+        for (const month of months) {
+            const val = matrix[cat]?.[month] || 0;
+            const opacity = val > 0 ? (0.08 + 0.55 * (val / (data.month_totals[month] || 1))) : 0;
+            const bg = val > 0 ? `background:rgba(244,63,94,${opacity.toFixed(2)})` : '';
+            html += `<td class="num" style="${bg}">${val > 0 ? formatMXN(val) : '—'}</td>`;
+        }
+        const barW = (intensity * 60).toFixed(0);
+        html += `<td class="num" style="position:sticky;right:0;background:var(--surface);font-weight:600">${formatMXN(total)}</td></tr>`;
+    }
+
+    // Month totals row
+    html += `<tr style="font-weight:700;border-top:2px solid var(--border)"><td style="position:sticky;left:0;background:var(--surface2)">ИТОГО</td>`;
+    for (const month of months) {
+        html += `<td class="num negative">${formatMXN(data.month_totals[month] || 0)}</td>`;
+    }
+    html += `<td style="position:sticky;right:0;background:var(--surface2)" class="num negative">${formatMXN(Object.values(data.month_totals).reduce((s,v)=>s+v,0))}</td></tr>`;
     html += '</tbody></table>';
-    document.getElementById('monthlyBreakdown').innerHTML = html;
+    document.getElementById('categoryMatrix').innerHTML = html;
+
+    // Top expenses bar chart
+    const topCats = data.categories.slice(0, 8);
+    const topVals = topCats.map(c => data.cat_totals[c] || 0);
+    const d2 = d || chartDefaults();
+    if (charts.topExp) charts.topExp.destroy();
+    charts.topExp = new Chart(document.getElementById('topExpChart'), {
+        type: 'bar',
+        data: {
+            labels: topCats,
+            datasets: [{ data: topVals, backgroundColor: PALETTE, borderRadius: 6, borderSkipped: false }]
+        },
+        options: {
+            indexAxis: 'y', responsive: true, animation: { duration: 500 },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: d2.tooltipBg, borderColor: d2.tooltipBorder, borderWidth: 1,
+                    titleColor: d2.tooltipText, bodyColor: d2.tooltipText, padding: 10, cornerRadius: 8,
+                    callbacks: { label: ctx => '  ' + formatMXN(ctx.parsed.x) }
+                }
+            },
+            scales: {
+                x: { ticks: { color: d2.textColor, callback: v => (v/1e6).toFixed(1)+'M' }, grid: { color: d2.gridColor } },
+                y: { ticks: { color: d2.textColor, font: { size: 12 } }, grid: { display: false } }
+            },
+            onClick: (evt, els) => {
+                if (!els.length) return;
+                window.location.href = '/transactions?category=' + encodeURIComponent(topCats[els[0].index]);
+            },
+            onHover: (evt, els) => { evt.native.target.style.cursor = els.length ? 'pointer' : 'default'; }
+        }
+    });
+
+    // Top 5 transactions list
+    const txns = data.top_transactions || [];
+    document.getElementById('topTxnList').innerHTML = txns.map((t, i) => `
+        <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)">
+            <span style="font-size:18px;font-weight:800;color:var(--border);min-width:24px">${i+1}</span>
+            <div style="flex:1;min-width:0">
+                <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.description || t.concept}</div>
+                <div style="font-size:11px;color:var(--text-dim)">${t.category} · ${t.month}</div>
+            </div>
+            <span style="font-size:14px;font-weight:700;color:var(--expense);white-space:nowrap">${formatMXN(t.amount)}</span>
+        </div>
+    `).join('');
 }
 
 async function loadAnomalies() {

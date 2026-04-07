@@ -195,6 +195,11 @@ function escHtml(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').
 // Debounced search
 let searchTimer;
 document.addEventListener('DOMContentLoaded', () => {
+    // Pre-fill filters from URL params (e.g. from dashboard click)
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('category')) document.getElementById('categoryFilter').value = urlParams.get('category');
+    if (urlParams.get('month')) document.getElementById('monthFilter').value = urlParams.get('month');
+
     loadTransactions();
     document.getElementById('searchInput').addEventListener('input', () => {
         clearTimeout(searchTimer);
