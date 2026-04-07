@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<div class="dashboard-page">
+    <div class="page-header">
+        <h1>Dashboard</h1>
+        <div class="header-actions">
+            <button class="btn btn-secondary" onclick="loadAnomalies()">AI: Найти аномалии</button>
+            <button class="btn btn-danger" onclick="resetData()">Сбросить данные</button>
+        </div>
+    </div>
+
+    <!-- KPI Cards -->
+    <div class="kpi-grid" id="kpiGrid">
+        <div class="kpi-card income"><div class="kpi-label">Доход (ОП)</div><div class="kpi-value" id="kpiIncome">—</div></div>
+        <div class="kpi-card expense"><div class="kpi-label">Расходы</div><div class="kpi-value" id="kpiExpense">—</div></div>
+        <div class="kpi-card net"><div class="kpi-label">Чистый поток</div><div class="kpi-value" id="kpiNet">—</div></div>
+        <div class="kpi-card count"><div class="kpi-label">Транзакций</div><div class="kpi-value" id="kpiCount">—</div></div>
+    </div>
+
+    <!-- Anomalies -->
+    <div class="anomalies-section hidden" id="anomaliesSection">
+        <h3>AI: Обнаруженные аномалии</h3>
+        <div id="anomaliesList"></div>
+    </div>
+
+    <!-- Charts -->
+    <div class="charts-grid">
+        <div class="chart-card">
+            <h3>Доходы vs Расходы по месяцам</h3>
+            <canvas id="monthlyChart"></canvas>
+        </div>
+        <div class="chart-card">
+            <h3>Денежный поток</h3>
+            <canvas id="cashFlowChart"></canvas>
+        </div>
+        <div class="chart-card">
+            <h3>Расходы по категориям</h3>
+            <canvas id="categoryChart"></canvas>
+        </div>
+        <div class="chart-card">
+            <h3>ДДС — факт по месяцам</h3>
+            <div class="table-scroll" id="planFactTable"></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let charts = {};
+
+async function loadDashboard() {
+    const res = await fetch('/api/dashboard');
+    const data = await res.json();
+
+    // KPIs
+    document.getElementById('kpiIncome').textContent = formatMXN(data.kpis.total_income);
+    document.getElementById('kpiExpense').textContent = formatMXN(data.kpis.total_expense);
+    document.getElementById('kpiNet').textContent = formatMXN(data.kpis.net_flow);
+    document.getElementById('kpiCount').textContent = data.kpis.transaction_count.toLocaleString();
+
+    const netEl = document.getElementById('kpiNet');
+    netEl.classList.toggle('positive', data.kpis.net_flow > 0);
+    netEl.classList.toggle('negative', data.kpis.net_flow < 0);
+
+    // Monthly bar chart
+    const months = data.monthly.map(m => m.month.replace(/\s+\d{4}$/, '').substring(0, 6));
+    if (charts.monthly) charts.monthly.destroy();
+    charts.monthly = new Chart(document.getElementById('monthlyChart'), {
+        type: 'bar',
+        data: {
+            labels: months,
+            datasets: [
+                { label: 'Доход', data: data.monthly.map(m => m.income), backgroundColor: '#22c55e88', borderColor: '#22c55e', borderWidth: 1 },
+                { label: 'Расход', data: data.monthly.map(m => m.expense), backgroundColor: '#ef444488', borderColor: '#ef4444', borderWidth: 1 }
+            ]
+        },
+        options: { responsive: true, scales: { y: { beginAtZero: true, ticks: { callback: v => (v/1e6).toFixed(1)+'M' } } } }
+    });
+
+    // Cash flow line chart
+    if (charts.cashFlow) charts.cashFlow.destroy();
+    charts.cashFlow = new Chart(document.getElementById('cashFlowChart'), {
+        type: 'line',
+        data: {
+            labels: months,
+            datasets: [{
+                label: 'Чистый поток',
+                data: data.monthly.map(m => m.net),
+                borderColor: '#3b82f6',
+                backgroundColor: '#3b82f644',
+                fill: true, tension: 0.3
+            }]
+        },
+        options: { responsive: true, scales: { y: { ticks: { callback: v => (v/1e6).toFixed(1)+'M' } } } }
+    });
+
+    // Category donut
+    const topCats = data.category_breakdown.slice(0, 10);
+    const colors = ['#ef4444','#f97316','#eab308','#22c55e','#06b6d4','#3b82f6','#8b5cf6','#ec4899','#6b7280','#14b8a6'];
+    if (charts.category) charts.category.destroy();
+    charts.category = new Chart(document.getElementById('categoryChart'), {
+        type: 'doughnut',
+        data: {
+            labels: topCats.map(c => c.category),
+            datasets: [{ data: topCats.map(c => c.amount), backgroundColor: colors }]
+        },
+        options: { responsive: true, plugins: { legend: { position: 'right', labels: { font: { size: 11 } } } } }
+    });
+
+    // Plan/fact table
+    if (data.plan_fact) {
+        let html = '<table class="data-table compact"><thead><tr><th>Месяц</th><th>Факт доход</th><th>Факт расход</th><th>Нетто</th></tr></thead><tbody>';
+        for (const pf of data.plan_fact) {
+            const net = pf.fact_income - pf.fact_expense;
+            html += `<tr><td>${pf.month}</td><td class="num">${formatMXN(pf.fact_income)}</td><td class="num">${formatMXN(pf.fact_expense)}</td><td class="num ${net>0?'positive':'negative'}">${formatMXN(net)}</td></tr>`;
+        }
+        html += '</tbody></table>';
+        document.getElementById('planFactTable').innerHTML = html;
+    }
+}
+
+async function loadAnomalies() {
+    const section = document.getElementById('anomaliesSection');
+    const list = document.getElementById('anomaliesList');
+    section.classList.remove('hidden');
+    list.innerHTML = '<div class="loading">AI анализирует данные...</div>';
+
+    const res = await fetch('/api/ai/anomalies');
+    const data = await res.json();
+
+    if (data.anomalies && data.anomalies.length) {
+        list.innerHTML = data.anomalies.map(a => `
+            <div class="anomaly-card severity-${a.severity || 'low'}">
+                <span class="anomaly-type">${a.type || ''}</span>
+                <span class="anomaly-month">${a.month || ''}</span>
+                <p>${a.description}</p>
+            </div>
+        `).join('');
+    } else {
+        list.innerHTML = '<p>Аномалий не обнаружено</p>';
+    }
+}
+
+async function resetData() {
+    if (!confirm('Сбросить все данные?')) return;
+    await fetch('/api/reset', { method: 'POST' });
+    window.location.href = '/';
+}
+
+function formatMXN(n) {
+    if (n == null) return '—';
+    return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 }).format(n);
+}
+
+document.addEventListener('DOMContentLoaded', loadDashboard);
+</script>
+{% endblock %}

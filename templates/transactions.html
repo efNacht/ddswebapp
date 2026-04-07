@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+{% block title %}Транзакции{% endblock %}
+{% block content %}
+<div class="transactions-page">
+    <div class="page-header">
+        <h1>Транзакции</h1>
+        <div class="header-actions">
+            <button class="btn btn-secondary" onclick="aiCategorize()">AI: Разметить UNKNOWN</button>
+            <button class="btn btn-primary" onclick="recalculate()">Пересчитать отчёты</button>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="filters-bar">
+        <input type="text" id="searchInput" placeholder="Поиск по описанию, concept..." class="filter-input">
+        <select id="monthFilter" class="filter-select"><option value="">Все месяцы</option></select>
+        <select id="categoryFilter" class="filter-select">
+            <option value="">Все категории</option>
+            {% for cat in categories %}
+            <option value="{{ cat }}">{{ cat }}</option>
+            {% endfor %}
+        </select>
+        <div class="filter-stats" id="filterStats"></div>
+    </div>
+
+    <!-- Table -->
+    <div class="table-container">
+        <table class="data-table" id="txnTable">
+            <thead>
+                <tr>
+                    <th>Дата</th>
+                    <th>Месяц</th>
+                    <th>Описание</th>
+                    <th>Concept</th>
+                    <th>Расход</th>
+                    <th>Приход</th>
+                    <th>Категория</th>
+                    <th>AI</th>
+                </tr>
+            </thead>
+            <tbody id="txnBody"></tbody>
+        </table>
+    </div>
+
+    <!-- Pagination -->
+    <div class="pagination" id="pagination"></div>
+
+    <!-- AI suggestion modal -->
+    <div class="modal hidden" id="aiModal">
+        <div class="modal-content">
+            <h3>AI Suggestion</h3>
+            <div id="aiSuggestion"></div>
+            <div class="modal-actions">
+                <button class="btn btn-primary" id="acceptAiBtn">Принять</button>
+                <button class="btn btn-secondary" onclick="closeModal()">Отмена</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const categories = {{ categories | tojson }};
+let currentPage = 1;
+let editingIdx = null;
+
+async function loadTransactions(page = 1) {
+    const search = document.getElementById('searchInput').value;
+    const month = document.getElementById('monthFilter').value;
+    const category = document.getElementById('categoryFilter').value;
+
+    const params = new URLSearchParams({ page, per_page: 100 });
+    if (search) params.set('search', search);
+    if (month) params.set('month', month);
+    if (category) params.set('category', category);
+
+    const res = await fetch(`/api/transactions?${params}`);
+    const data = await res.json();
+
+    // Populate month filter
+    const monthSelect = document.getElementById('monthFilter');
+    if (monthSelect.options.length <= 1 && data.months) {
+        data.months.forEach(m => {
+            const opt = document.createElement('option');
+            opt.value = m; opt.textContent = m;
+            monthSelect.appendChild(opt);
+        });
+    }
+
+    // Stats
+    document.getElementById('filterStats').textContent = `${data.total} транзакций (стр. ${data.page}/${data.pages})`;
+
+    // Table
+    const tbody = document.getElementById('txnBody');
+    tbody.innerHTML = data.transactions.map(t => {
+        const confClass = t.confidence >= 0.8 ? 'conf-high' : t.confidence >= 0.5 ? 'conf-mid' : 'conf-low';
+        const catClass = t.category === 'UNKNOWN' ? 'cat-unknown' : '';
+        const aiIcon = t.ai_categorized ? '<span class="ai-badge" title="'+escHtml(t.ai_reason)+'">AI</span>' : '';
+
+        return `<tr class="${catClass}" data-idx="${t.index}">
+            <td>${t.date || ''}</td>
+            <td class="month-cell">${t.month}</td>
+            <td class="desc-cell" title="${escHtml(t.long_description)}">${escHtml(t.description)}</td>
+            <td class="concept-cell" title="${escHtml(t.concept)}">${escHtml((t.concept||'').substring(0,30))}</td>
+            <td class="num">${t.cargo ? formatN(t.cargo) : ''}</td>
+            <td class="num positive">${t.abono ? formatN(t.abono) : ''}</td>
+            <td class="cat-cell ${confClass}">
+                <select class="cat-select" onchange="updateCategory(${t.index}, this.value)">
+                    ${categories.map(c => `<option value="${c}" ${c===t.category?'selected':''}>${c}</option>`).join('')}
+                </select>
+            </td>
+            <td class="ai-cell">${aiIcon} <button class="btn-icon" onclick="askAI(${t.index})" title="Спросить AI">?</button></td>
+        </tr>`;
+    }).join('');
+
+    // Pagination
+    const pag = document.getElementById('pagination');
+    let pagHtml = '';
+    for (let p = 1; p <= data.pages; p++) {
+        pagHtml += `<button class="page-btn ${p===data.page?'active':''}" onclick="loadTransactions(${p})">${p}</button>`;
+    }
+    pag.innerHTML = pagHtml;
+    currentPage = data.page;
+}
+
+async function updateCategory(idx, category) {
+    await fetch(`/api/transactions/${idx}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ category })
+    });
+}
+
+async function aiCategorize() {
+    const btn = event.target;
+    btn.disabled = true;
+    btn.textContent = 'AI работает...';
+    const res = await fetch('/api/ai/categorize', { method: 'POST' });
+    const data = await res.json();
+    btn.disabled = false;
+    btn.textContent = 'AI: Разметить UNKNOWN';
+    alert(`AI разметил ${data.applied} из ${data.total} UNKNOWN транзакций`);
+    loadTransactions(currentPage);
+}
+
+async function askAI(idx) {
+    editingIdx = idx;
+    const modal = document.getElementById('aiModal');
+    const suggestion = document.getElementById('aiSuggestion');
+    modal.classList.remove('hidden');
+    suggestion.innerHTML = '<div class="loading">AI думает...</div>';
+
+    const res = await fetch('/api/ai/suggest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ index: idx })
+    });
+    const data = await res.json();
+    if (!res.ok || data.error || !data.category || data.category === 'UNKNOWN') {
+        suggestion.innerHTML = `<p style="color:#f87171">⚠️ AI недоступен: ${data.error || data.reason || 'нет ключа или ошибка API'}</p>`;
+        document.getElementById('acceptAiBtn').style.display = 'none';
+        return;
+    }
+    document.getElementById('acceptAiBtn').style.display = '';
+    suggestion.innerHTML = `
+        <p><strong>Категория:</strong> ${data.category}</p>
+        <p><strong>Уверенность:</strong> ${Math.round((data.confidence||0)*100)}%</p>
+        <p><strong>Причина:</strong> ${data.reason || '—'}</p>
+    `;
+    document.getElementById('acceptAiBtn').onclick = () => {
+        updateCategory(idx, data.category);
+        closeModal();
+        loadTransactions(currentPage);
+    };
+}
+
+function closeModal() {
+    document.getElementById('aiModal').classList.add('hidden');
+}
+
+async function recalculate() {
+    const btn = event.target;
+    btn.disabled = true;
+    btn.textContent = 'Пересчитываю...';
+    await fetch('/api/recalculate', { method: 'POST' });
+    btn.disabled = false;
+    btn.textContent = 'Пересчитать отчёты';
+    alert('Отчёты пересчитаны!');
+}
+
+function formatN(n) { return n ? n.toLocaleString('es-MX', {maximumFractionDigits:0}) : ''; }
+function escHtml(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); }
+
+// Debounced search
+let searchTimer;
+document.addEventListener('DOMContentLoaded', () => {
+    loadTransactions();
+    document.getElementById('searchInput').addEventListener('input', () => {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(() => loadTransactions(1), 300);
+    });
+    document.getElementById('monthFilter').addEventListener('change', () => loadTransactions(1));
+    document.getElementById('categoryFilter').addEventListener('change', () => loadTransactions(1));
+});
+</script>
+{% endblock %}

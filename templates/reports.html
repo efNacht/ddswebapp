@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Отчёты{% endblock %}
+{% block content %}
+<div class="reports-page">
+    <div class="page-header">
+        <h1>Отчёты</h1>
+        <button class="btn btn-primary" onclick="downloadAll()">Скачать все</button>
+    </div>
+
+    <div class="reports-grid" id="reportsGrid">
+        <div class="loading">Загрузка списка отчётов...</div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadReports() {
+    const res = await fetch('/api/reports/list');
+    const data = await res.json();
+    const grid = document.getElementById('reportsGrid');
+
+    const icons = {
+        'dds': '&#128200;', 'pl': '&#128202;',
+        'dds-template': '&#128203;', 'pl-template': '&#128203;',
+        'reconciliation': '&#128269;', 'tax': '&#128176;'
+    };
+    const descriptions = {
+        'dds': 'Cash flow факт — отдельный файл со всеми статьями ДДС',
+        'pl': 'P&L факт — прибыль и убытки с расчётом маржинальности',
+        'dds-template': 'Оригинальный шаблон Эмиля с заполненными столбцами "факт"',
+        'pl-template': 'Оригинальный шаблон PL с заполненными расходами из банка',
+        'reconciliation': 'Сверка OpenPay + MercadoPago vs банковская выписка',
+        'tax': 'НДС, налог на сотрудников, лидеров — помесячно + анализ IVA',
+    };
+
+    grid.innerHTML = data.reports.map(r => `
+        <div class="report-card ${r.available ? '' : 'disabled'}">
+            <div class="report-icon">${icons[r.key] || '&#128196;'}</div>
+            <div class="report-info">
+                <h3>${r.title}</h3>
+                <p>${descriptions[r.key] || ''}</p>
+                <span class="report-meta">${r.available ? r.size_kb + ' KB · создан ' + r.generated_at : 'Не сгенерирован'}</span>
+            </div>
+            <div class="report-actions">
+                ${r.available ? `<a href="/api/reports/${r.key}" download="${r.filename}" class="btn btn-primary">⬇ Скачать</a>` : '<span class="btn btn-disabled">Недоступен</span>'}
+            </div>
+        </div>
+    `).join('');
+}
+
+function downloadAll() {
+    const links = document.querySelectorAll('.report-card:not(.disabled) a.btn');
+    links.forEach((a, i) => setTimeout(() => a.click(), i * 500));
+}
+
+document.addEventListener('DOMContentLoaded', loadReports);
+</script>
+{% endblock %}

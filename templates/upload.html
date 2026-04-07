@@ -1,0 +1,223 @@
+{% extends "base.html" %}
+{% block title %}Загрузка{% endblock %}
+{% block content %}
+<div class="upload-page">
+
+    {% if has_data %}
+    <div class="already-loaded-banner">
+        <span>📊 Данные загружены: <strong>{{ source_filename }}</strong> от {{ generated_at }}</span>
+        <div style="display:flex;gap:8px">
+            <a href="/dashboard" class="btn btn-primary btn-sm">Dashboard →</a>
+            <a href="/reports" class="btn btn-sm">Отчёты →</a>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="upload-hero">
+        <h1>Financial Report Generator</h1>
+        <p>Загрузите выписку Santander — получите все отчёты автоматически</p>
+    </div>
+
+    <form id="uploadForm" class="upload-form" autocomplete="off">
+
+        <label class="upload-zone" id="dropZone" for="bankFile">
+            <div class="upload-icon">📄</div>
+            <h3>Выписка Santander (.xlsx)</h3>
+            <p>Перетащите файл сюда или нажмите для выбора</p>
+            <input type="file" name="bank_statement" id="bankFile" accept=".xlsx,.xls" required style="display:none">
+            <div class="file-name" id="bankFileName"></div>
+        </label>
+
+        <details class="optional-files">
+            <summary>Дополнительные файлы (опционально)</summary>
+            <div class="optional-grid">
+                <label class="file-input-label">
+                    <span>Sales Report</span>
+                    <input type="file" name="sales_report" accept=".xlsx,.xls" style="display:none">
+                    <span class="file-input-chosen" data-label="Sales Report">Не выбран</span>
+                </label>
+                <label class="file-input-label">
+                    <span>Оплаты William</span>
+                    <input type="file" name="payments" accept=".xlsx,.xls" style="display:none">
+                    <span class="file-input-chosen" data-label="Оплаты William">Не выбран</span>
+                </label>
+                <label class="file-input-label">
+                    <span>Шаблон ДДС</span>
+                    <input type="file" name="dds_template" accept=".xlsx,.xls" style="display:none">
+                    <span class="file-input-chosen" data-label="Шаблон ДДС">Не выбран</span>
+                </label>
+                <label class="file-input-label">
+                    <span>Шаблон PL</span>
+                    <input type="file" name="pl_template" accept=".xlsx,.xls" style="display:none">
+                    <span class="file-input-chosen" data-label="Шаблон PL">Не выбран</span>
+                </label>
+            </div>
+        </details>
+
+        <button type="submit" class="btn btn-primary btn-large" id="submitBtn">
+            Сгенерировать отчёты
+        </button>
+    </form>
+
+    <!-- Progress -->
+    <div class="progress-section" id="progressSection" style="display:none">
+        <div class="progress-bar">
+            <div class="progress-fill" id="progressFill" style="width:0%"></div>
+        </div>
+        <div class="progress-steps" id="progressSteps">
+            <span class="step" data-step="0">📥 Загрузка</span>
+            <span class="step" data-step="1">🔍 Парсинг</span>
+            <span class="step" data-step="2">🏷️ Категоризация</span>
+            <span class="step" data-step="3">🤖 AI</span>
+            <span class="step" data-step="4">📊 ДДС</span>
+            <span class="step" data-step="5">📈 PL</span>
+            <span class="step" data-step="6">🧾 Налоги</span>
+            <span class="step" data-step="7">✅ Готово</span>
+        </div>
+        <div class="progress-text" id="progressText">Отправка файла...</div>
+    </div>
+
+    <div id="resultSection"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const form       = document.getElementById('uploadForm');
+    const bankFile   = document.getElementById('bankFile');
+    const bankLabel  = document.getElementById('bankFileName');
+    const submitBtn  = document.getElementById('submitBtn');
+    const progSec    = document.getElementById('progressSection');
+    const progFill   = document.getElementById('progressFill');
+    const progText   = document.getElementById('progressText');
+    const resultSec  = document.getElementById('resultSection');
+    const dropZone   = document.getElementById('dropZone');
+
+    // Show chosen filename for main file
+    bankFile.addEventListener('change', () => {
+        bankLabel.textContent = bankFile.files.length ? bankFile.files[0].name : '';
+    });
+
+    // Show chosen filename for optional files
+    document.querySelectorAll('.optional-files input[type=file]').forEach(input => {
+        input.addEventListener('change', () => {
+            const span = input.nextElementSibling;
+            if (span) span.textContent = input.files.length ? input.files[0].name : 'Не выбран';
+        });
+    });
+
+    // Drag & drop on the label (not a separate div — avoids double-click issue)
+    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+    dropZone.addEventListener('drop', e => {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+        if (e.dataTransfer.files.length) {
+            // Assign dropped file to input
+            const dt = new DataTransfer();
+            dt.items.add(e.dataTransfer.files[0]);
+            bankFile.files = dt.files;
+            bankLabel.textContent = e.dataTransfer.files[0].name;
+        }
+    });
+
+    // Progress helpers
+    const STEPS = ['📥 Загрузка', '🔍 Парсинг', '🏷️ Категоризация', '🤖 AI', '📊 ДДС', '📈 PL', '🧾 Налоги', '✅ Готово'];
+    let stepInterval = null;
+    let currentStep = 0;
+
+    function startProgress() {
+        progSec.style.display = 'block';
+        resultSec.innerHTML = '';
+        currentStep = 0;
+        progFill.style.width = '5%';
+        progText.textContent = STEPS[0];
+        highlightStep(0);
+        // Advance fake steps every ~1.5s (server takes ~10s total)
+        stepInterval = setInterval(() => {
+            currentStep = Math.min(currentStep + 1, STEPS.length - 2); // stop at second-to-last
+            progFill.style.width = ((currentStep + 1) / STEPS.length * 85) + '%';
+            progText.textContent = STEPS[currentStep];
+            highlightStep(currentStep);
+        }, 1500);
+    }
+
+    function finishProgress(success) {
+        clearInterval(stepInterval);
+        progFill.style.width = '100%';
+        progText.textContent = success ? '✅ Готово!' : '❌ Ошибка';
+        highlightStep(STEPS.length - 1);
+    }
+
+    function highlightStep(idx) {
+        document.querySelectorAll('.step').forEach((el, i) => {
+            el.classList.toggle('active', i === idx);
+            el.classList.toggle('done', i < idx);
+        });
+    }
+
+    // Submit
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        if (!bankFile.files.length) { alert('Выберите файл выписки'); return; }
+
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Обработка...';
+        startProgress();
+
+        const formData = new FormData(form);
+        try {
+            const res = await fetch('/api/upload', { method: 'POST', body: formData });
+            const data = await res.json();
+            finishProgress(data.success);
+
+            if (data.success) {
+                const catsHtml = (data.category_breakdown || []).map(c =>
+                    `<tr><td>${c.category}</td><td style="text-align:right">${c.count}</td></tr>`
+                ).join('');
+                const filesHtml = (data.generated_files || []).map(f =>
+                    `<li>✅ <strong>${f.name}</strong> — ${f.filename} <span style="color:#6b7280">(${f.size_kb} KB)</span></li>`
+                ).join('');
+                const monthsStr = (data.months || []).join(', ') || '—';
+
+                resultSec.innerHTML = `
+                <div class="result-card success">
+                    <h3>✅ Готово за ${data.elapsed}с</h3>
+                    <p class="result-meta">📄 ${data.source_file} · ${data.generated_at}</p>
+                    <div class="result-grid">
+                        <div class="result-stats">
+                            <div class="stat-row"><span>Транзакций</span><strong>${data.transactions}</strong></div>
+                            <div class="stat-row"><span>Месяцев</span><strong>${(data.months||[]).length}</strong></div>
+                            <div class="stat-row"><span>AI разметил</span><strong>${data.ai_categorized || 0}</strong></div>
+                            <div class="stat-row"><span>UNKNOWN</span><strong>${data.unknown}</strong></div>
+                            <div class="stat-row months"><span>Период</span><small>${monthsStr}</small></div>
+                        </div>
+                        <div class="result-cats">
+                            <p><strong>Топ категорий:</strong></p>
+                            <table><tr><th>Категория</th><th style="text-align:right">Транзакций</th></tr>${catsHtml}</table>
+                        </div>
+                    </div>
+                    <div class="result-files">
+                        <p><strong>📁 Сгенерированные файлы:</strong></p>
+                        <ul>${filesHtml}</ul>
+                    </div>
+                    <div class="result-actions">
+                        <a href="/dashboard" class="btn btn-primary">Dashboard →</a>
+                        <a href="/reports" class="btn">Скачать отчёты →</a>
+                    </div>
+                </div>`;
+            } else {
+                resultSec.innerHTML = `<div class="result-card error"><h3>❌ Ошибка</h3><p>${data.error || 'Неизвестная ошибка'}</p></div>`;
+            }
+        } catch (err) {
+            finishProgress(false);
+            resultSec.innerHTML = `<div class="result-card error"><h3>❌ Ошибка сети</h3><p>${err.message}</p></div>`;
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Сгенерировать отчёты';
+        }
+    });
+});
+</script>
+{% endblock %}
