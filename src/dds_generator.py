@@ -264,6 +264,9 @@ def write_dds_excel(dds_data, output_path=None):
 
         row_num += 1
 
+    # Rows excluded from cash flow totals (KPI/balance rows, not operational flows)
+    TOTALS_EXCLUDE = {"total_abono", "opening_balance", "closing_balance"}
+
     # Add totals row
     row_num += 1
     ws.cell(row_num, 1, "ИТОГО приток").font = section_font
@@ -272,7 +275,7 @@ def write_dds_excel(dds_data, output_path=None):
         total_in = sum(
             dds_data[month].get(cat_key, 0)
             for _, _, cat_key, is_income in DDS_STRUCTURE
-            if cat_key and is_income is True
+            if cat_key and is_income is True and cat_key not in TOTALS_EXCLUDE
         )
         ws.cell(row_num, col, total_in).number_format = number_format
 
@@ -283,7 +286,7 @@ def write_dds_excel(dds_data, output_path=None):
         total_out = sum(
             dds_data[month].get(cat_key, 0)
             for _, _, cat_key, is_income in DDS_STRUCTURE
-            if cat_key and is_income is False
+            if cat_key and is_income is False and cat_key not in TOTALS_EXCLUDE
         )
         ws.cell(row_num, col, total_out).number_format = number_format
 
@@ -294,12 +297,12 @@ def write_dds_excel(dds_data, output_path=None):
         total_in = sum(
             dds_data[month].get(cat_key, 0)
             for _, _, cat_key, is_income in DDS_STRUCTURE
-            if cat_key and is_income is True
+            if cat_key and is_income is True and cat_key not in TOTALS_EXCLUDE
         )
         total_out = sum(
             dds_data[month].get(cat_key, 0)
             for _, _, cat_key, is_income in DDS_STRUCTURE
-            if cat_key and is_income is False
+            if cat_key and is_income is False and cat_key not in TOTALS_EXCLUDE
         )
         net = total_in - total_out
         cell = ws.cell(row_num, col, net)
@@ -338,15 +341,16 @@ def print_dds_summary(dds_data):
             print(f"\n{name}")
 
     # Net flow
+    _excl = {"total_abono", "opening_balance", "closing_balance"}
     print(f"\n{'ЧИСТЫЙ ДЕНЕЖНЫЙ ПОТОК':<40s}", end="")
     for month in sorted_months:
         total_in = sum(
             dds_data[month].get(ck, 0)
-            for _, _, ck, inc in DDS_STRUCTURE if ck and inc is True
+            for _, _, ck, inc in DDS_STRUCTURE if ck and inc is True and ck not in _excl
         )
         total_out = sum(
             dds_data[month].get(ck, 0)
-            for _, _, ck, inc in DDS_STRUCTURE if ck and inc is False
+            for _, _, ck, inc in DDS_STRUCTURE if ck and inc is False and ck not in _excl
         )
         net = total_in - total_out
         print(f"{net:>15,.0f}", end="")
