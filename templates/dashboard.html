@@ -24,24 +24,40 @@
         <div id="anomaliesList"></div>
     </div>
 
-    <!-- Charts -->
+    <!-- Charts row 1 -->
     <div class="charts-grid">
         <div class="chart-card">
             <h3>Доходы vs Расходы по месяцам</h3>
             <canvas id="monthlyChart"></canvas>
         </div>
         <div class="chart-card">
-            <h3>Денежный поток</h3>
+            <h3>Чистый денежный поток</h3>
             <canvas id="cashFlowChart"></canvas>
         </div>
+    </div>
+
+    <!-- Charts row 2 -->
+    <div class="charts-grid" style="margin-top:16px">
         <div class="chart-card">
-            <h3>Расходы по категориям</h3>
+            <h3>Расходы по категориям (топ-10)</h3>
             <canvas id="categoryChart"></canvas>
         </div>
         <div class="chart-card">
-            <h3>ДДС — факт по месяцам</h3>
-            <div class="table-scroll" id="planFactTable"></div>
+            <h3>Расходы по категориям</h3>
+            <div class="table-scroll" id="categoryTable"></div>
         </div>
+    </div>
+
+    <!-- Monthly breakdown -->
+    <div class="chart-card" style="margin-top:16px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+            <h3 style="margin:0">Разбивка по месяцам</h3>
+            <div style="display:flex;gap:8px">
+                <button class="btn btn-sm" id="btnShowIncome" onclick="toggleMonthlyView('income')">Доходы</button>
+                <button class="btn btn-sm active" id="btnShowExpense" onclick="toggleMonthlyView('expense')">Расходы</button>
+            </div>
+        </div>
+        <div class="table-scroll" id="monthlyBreakdown"></div>
     </div>
 </div>
 {% endblock %}
@@ -109,16 +125,58 @@ async function loadDashboard() {
         options: { responsive: true, plugins: { legend: { position: 'right', labels: { font: { size: 11 } } } } }
     });
 
-    // Plan/fact table
-    if (data.plan_fact) {
-        let html = '<table class="data-table compact"><thead><tr><th>Месяц</th><th>Факт доход</th><th>Факт расход</th><th>Нетто</th></tr></thead><tbody>';
-        for (const pf of data.plan_fact) {
-            const net = pf.fact_income - pf.fact_expense;
-            html += `<tr><td>${pf.month}</td><td class="num">${formatMXN(pf.fact_income)}</td><td class="num">${formatMXN(pf.fact_expense)}</td><td class="num ${net>0?'positive':'negative'}">${formatMXN(net)}</td></tr>`;
-        }
-        html += '</tbody></table>';
-        document.getElementById('planFactTable').innerHTML = html;
+    // Category table
+    const cats = data.category_breakdown || [];
+    const totalExp = cats.reduce((s, c) => s + c.amount, 0);
+    let catHtml = '<table class="data-table compact"><thead><tr><th>Категория</th><th class="num">Сумма</th><th class="num">%</th></tr></thead><tbody>';
+    for (const c of cats) {
+        const pct = totalExp > 0 ? (c.amount / totalExp * 100).toFixed(1) : 0;
+        catHtml += `<tr><td>${c.category}</td><td class="num">${formatMXN(c.amount)}</td><td class="num" style="color:var(--text-dim)">${pct}%</td></tr>`;
     }
+    catHtml += `<tr style="font-weight:700;border-top:2px solid var(--border)"><td>Итого расходы</td><td class="num">${formatMXN(totalExp)}</td><td></td></tr>`;
+    catHtml += '</tbody></table>';
+    document.getElementById('categoryTable').innerHTML = catHtml;
+
+    // Monthly breakdown table (expenses by default)
+    window._monthlyData = data.monthly;
+    window._catBreakdown = data.category_breakdown;
+    renderMonthlyBreakdown('expense');
+}
+
+let _monthlyView = 'expense';
+function toggleMonthlyView(view) {
+    _monthlyView = view;
+    document.getElementById('btnShowIncome').classList.toggle('active', view === 'income');
+    document.getElementById('btnShowExpense').classList.toggle('active', view === 'expense');
+    renderMonthlyBreakdown(view);
+}
+
+function renderMonthlyBreakdown(view) {
+    const monthly = window._monthlyData || [];
+    if (!monthly.length) return;
+    const key = view === 'income' ? 'income' : 'expense';
+    const netKey = 'net';
+
+    let html = '<table class="data-table compact"><thead><tr><th>Месяц</th><th class="num">Доход</th><th class="num">Расход</th><th class="num">Поток</th></tr></thead><tbody>';
+    let totInc = 0, totExp = 0, totNet = 0;
+    for (const m of monthly) {
+        totInc += m.income; totExp += m.expense; totNet += m.net;
+        const netClass = m.net >= 0 ? 'positive' : 'negative';
+        html += `<tr>
+            <td style="white-space:nowrap">${m.month}</td>
+            <td class="num positive">${formatMXN(m.income)}</td>
+            <td class="num negative">${formatMXN(m.expense)}</td>
+            <td class="num ${netClass}">${formatMXN(m.net)}</td>
+        </tr>`;
+    }
+    html += `<tr style="font-weight:700;border-top:2px solid var(--border)">
+        <td>ИТОГО</td>
+        <td class="num positive">${formatMXN(totInc)}</td>
+        <td class="num negative">${formatMXN(totExp)}</td>
+        <td class="num ${totNet>=0?'positive':'negative'}">${formatMXN(totNet)}</td>
+    </tr>`;
+    html += '</tbody></table>';
+    document.getElementById('monthlyBreakdown').innerHTML = html;
 }
 
 async function loadAnomalies() {

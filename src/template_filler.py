@@ -11,7 +11,7 @@ import shutil
 from collections import defaultdict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from config import DDS_TEMPLATE_FILE, PL_TEMPLATE_FILE, OUTPUT_DIR
+import config as _cfg
 
 try:
     import openpyxl
@@ -181,10 +181,14 @@ def fill_dds_template(dds_data, output_path=None):
     Copies the template file and fills fact columns.
     Returns path to the filled file.
     """
-    output_path = output_path or os.path.join(OUTPUT_DIR, "ДДС_план_факт.xlsx")
+    output_path = output_path or os.path.join(_cfg.OUTPUT_DIR, "ДДС_план_факт.xlsx")
+    template_path = _cfg.DDS_TEMPLATE_FILE
+
+    if not template_path or not os.path.exists(template_path):
+        raise FileNotFoundError(f"DDS template not found: {template_path}")
 
     # Copy template
-    shutil.copy2(DDS_TEMPLATE_FILE, output_path)
+    shutil.copy2(template_path, output_path)
 
     # Open with openpyxl (keep formatting)
     wb = openpyxl.load_workbook(output_path)
@@ -218,10 +222,14 @@ def fill_pl_template(categorized_transactions, output_path=None):
     """
     from dds_generator import MONTH_ORDER, aggregate_by_month
 
-    output_path = output_path or os.path.join(OUTPUT_DIR, "PL_план_факт.xlsx")
+    output_path = output_path or os.path.join(_cfg.OUTPUT_DIR, "PL_план_факт.xlsx")
+    template_path = _cfg.PL_TEMPLATE_FILE
+
+    if not template_path or not os.path.exists(template_path):
+        raise FileNotFoundError(f"PL template not found: {template_path}")
 
     # Copy template
-    shutil.copy2(PL_TEMPLATE_FILE, output_path)
+    shutil.copy2(template_path, output_path)
 
     wb = openpyxl.load_workbook(output_path)
 

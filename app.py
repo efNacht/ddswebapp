@@ -227,6 +227,9 @@ def run_pipeline(bank_path):
     print(f"[PIPELINE] os.path.exists(bank_path)={os.path.exists(bank_path)}", flush=True)
 
     import src.config as cfg
+    import sys as _sys
+    # Ensure 'config' and 'src.config' resolve to the same module instance
+    _sys.modules['config'] = cfg
     cfg.BANK_STATEMENT_FILE = bank_path
 
     # Check for optional files
