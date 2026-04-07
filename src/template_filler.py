@@ -175,14 +175,16 @@ PL_ROW_MAP = {
 }
 
 
-def fill_dds_template(dds_data, output_path=None):
+def fill_dds_template(dds_data, output_path=None, template_path=None):
     """Fill the original DDS template with fact data.
 
     Copies the template file and fills fact columns.
     Returns path to the filled file.
     """
     output_path = output_path or os.path.join(_cfg.OUTPUT_DIR, "ДДС_план_факт.xlsx")
-    template_path = _cfg.DDS_TEMPLATE_FILE
+    template_path = template_path or _cfg.DDS_TEMPLATE_FILE
+
+    print(f"[DDS_FILL] template_path={template_path} exists={os.path.exists(template_path) if template_path else False}", flush=True)
 
     if not template_path or not os.path.exists(template_path):
         raise FileNotFoundError(f"DDS template not found: {template_path}")
@@ -192,7 +194,16 @@ def fill_dds_template(dds_data, output_path=None):
 
     # Open with openpyxl (keep formatting)
     wb = openpyxl.load_workbook(output_path)
-    ws = wb["ДДС 2025-2026_нац валюта"]
+
+    # Find the DDS sheet — try exact name first, then fuzzy match
+    ws = None
+    for name in wb.sheetnames:
+        if name == "ДДС 2025-2026_нац валюта" or "ДДС" in name or "DDS" in name.upper():
+            ws = wb[name]
+            print(f"[DDS_FILL] Using sheet: '{name}'", flush=True)
+            break
+    if ws is None:
+        raise KeyError(f"DDS sheet not found. Available sheets: {wb.sheetnames}")
 
     filled_count = 0
 
@@ -214,7 +225,7 @@ def fill_dds_template(dds_data, output_path=None):
     return output_path
 
 
-def fill_pl_template(categorized_transactions, output_path=None):
+def fill_pl_template(categorized_transactions, output_path=None, template_path=None):
     """Fill the original PL template with fact data from bank.
 
     Only fills expense rows that come from bank categorization.
@@ -223,7 +234,9 @@ def fill_pl_template(categorized_transactions, output_path=None):
     from dds_generator import MONTH_ORDER, aggregate_by_month
 
     output_path = output_path or os.path.join(_cfg.OUTPUT_DIR, "PL_план_факт.xlsx")
-    template_path = _cfg.PL_TEMPLATE_FILE
+    template_path = template_path or _cfg.PL_TEMPLATE_FILE
+
+    print(f"[PL_FILL] template_path={template_path} exists={os.path.exists(template_path) if template_path else False}", flush=True)
 
     if not template_path or not os.path.exists(template_path):
         raise FileNotFoundError(f"PL template not found: {template_path}")

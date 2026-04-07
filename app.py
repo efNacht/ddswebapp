@@ -329,10 +329,13 @@ def _generate_reports(categorized):
     print(f"[REPORTS] DDS written: {os.path.exists(dds_path)}", flush=True)
 
     # DDS template fill
-    if app_state["has_dds_template"]:
+    dds_tpl = os.path.join(UPLOAD_DIR, "dds_template.xlsx")
+    print(f"[REPORTS] has_dds_template={app_state['has_dds_template']}, dds_tpl exists={os.path.exists(dds_tpl)}", flush=True)
+    if app_state["has_dds_template"] or os.path.exists(dds_tpl):
         try:
             from template_filler import fill_dds_template
-            fill_dds_template(dds_data, os.path.join(OUTPUT_DIR, "ДДС_план_факт.xlsx"))
+            fill_dds_template(dds_data, os.path.join(OUTPUT_DIR, "ДДС_план_факт.xlsx"), template_path=dds_tpl)
+            app_state["has_dds_template"] = True
             print("[REPORTS] DDS template filled", flush=True)
         except Exception as e:
             print(f"[REPORTS] DDS template fill error: {e}", flush=True)
@@ -356,10 +359,13 @@ def _generate_reports(categorized):
         app_state["pl_data"] = None
 
     # PL template fill
-    if app_state["has_pl_template"]:
+    pl_tpl = os.path.join(UPLOAD_DIR, "pl_template.xlsx")
+    print(f"[REPORTS] has_pl_template={app_state['has_pl_template']}, pl_tpl exists={os.path.exists(pl_tpl)}", flush=True)
+    if app_state["has_pl_template"] or os.path.exists(pl_tpl):
         try:
             from template_filler import fill_pl_template
-            fill_pl_template(categorized, os.path.join(OUTPUT_DIR, "PL_план_факт.xlsx"))
+            fill_pl_template(categorized, os.path.join(OUTPUT_DIR, "PL_план_факт.xlsx"), template_path=pl_tpl)
+            app_state["has_pl_template"] = True
             print("[REPORTS] PL template filled", flush=True)
         except Exception as e:
             print(f"[REPORTS] PL template fill error: {e}", flush=True)
