@@ -7,6 +7,7 @@ import os
 import sys
 import json
 import time
+import pickle
 import traceback
 from datetime import datetime, timezone, timedelta
 
@@ -30,6 +31,7 @@ app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max upload
 
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
+STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output", "state.pkl")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -51,6 +53,31 @@ app_state = {
     "generated_at": None,
     "source_filename": None,
 }
+
+def save_state():
+    """Persist app_state to disk so it survives worker restarts."""
+    try:
+        saveable = {k: v for k, v in app_state.items() if k != "processing"}
+        with open(STATE_FILE, "wb") as f:
+            pickle.dump(saveable, f)
+    except Exception as e:
+        print(f"[STATE] Save failed: {e}", flush=True)
+
+def load_state():
+    """Restore app_state from disk on startup."""
+    if not os.path.exists(STATE_FILE):
+        return
+    try:
+        with open(STATE_FILE, "rb") as f:
+            saved = pickle.load(f)
+        app_state.update(saved)
+        app_state["processing"] = False
+        print(f"[STATE] Restored: {len(app_state['categorized'])} transactions, has_data={app_state['has_data']}", flush=True)
+    except Exception as e:
+        print(f"[STATE] Restore failed: {e}", flush=True)
+
+# Restore state on startup
+load_state()
 
 # Gemini API — key must be set via GEMINI_API_KEY environment variable
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
@@ -286,6 +313,7 @@ def run_pipeline(bank_path):
 
     app_state["has_data"] = True
     app_state["generated_at"] = now_msk()
+    save_state()
 
 
 def _generate_reports(categorized):
@@ -455,12 +483,12 @@ def api_upload():
 
         # Generated files with sizes
         report_files = [
-            ("ДДС_факт.xlsx", "ДДС факт"),
-            ("PL_факт.xlsx", "PL факт"),
-            ("ДДС_план_факт.xlsx", "ДДС план/факт"),
-            ("PL_план_факт.xlsx", "PL план/факт"),
-            ("Налоговая_сводка.xlsx", "Налоги"),
-            ("Сверка_провайдеров.xlsx", "Сверка"),
+            ("ДДС_факт.xlsx", "ДДС — движение средств"),
+            ("PL_факт.xlsx", "P&L — прибыли и убытки"),
+            ("ДДС_план_факт.xlsx", "ДДС — шаблон компании"),
+            ("PL_план_факт.xlsx", "P&L — шаблон компании"),
+            ("Налоговая_сводка.xlsx", "Налоговый отчёт"),
+            ("Сверка_провайдеров.xlsx", "Сверка платёжных систем"),
         ]
         generated_files = []
         for fname, title in report_files:
@@ -742,12 +770,12 @@ def api_reports_list():
     """List available reports."""
     reports = []
     report_info = [
-        ("dds", "ДДС_факт.xlsx", "ДДС факт (отдельный файл)"),
-        ("pl", "PL_факт.xlsx", "PL факт (отдельный файл)"),
-        ("dds-template", "ДДС_план_факт.xlsx", "ДДС план/факт (шаблон Эмиля)"),
-        ("pl-template", "PL_план_факт.xlsx", "PL план/факт (шаблон Эмиля)"),
-        ("reconciliation", "Сверка_провайдеров.xlsx", "Сверка провайдеров"),
-        ("tax", "Налоговая_сводка.xlsx", "Налоговая сводка"),
+        ("dds", "ДДС_факт.xlsx", "ДДС — движение средств"),
+        ("pl", "PL_факт.xlsx", "P&L — прибыли и убытки"),
+        ("dds-template", "ДДС_план_факт.xlsx", "ДДС — шаблон компании (план/факт)"),
+        ("pl-template", "PL_план_факт.xlsx", "P&L — шаблон компании (план/факт)"),
+        ("reconciliation", "Сверка_провайдеров.xlsx", "Сверка платёжных систем"),
+        ("tax", "Налоговая_сводка.xlsx", "Налоговый отчёт"),
     ]
 
     for key, filename, title in report_info:
@@ -833,6 +861,8 @@ def api_reset():
         "has_dds_template": False,
         "has_pl_template": False,
         "processing": False,
+        "generated_at": None,
+        "source_filename": None,
     })
     # Clean upload/output dirs
     for d in [UPLOAD_DIR, OUTPUT_DIR]:
