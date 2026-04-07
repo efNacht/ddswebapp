@@ -65,6 +65,35 @@
 {% block scripts %}
 <script>
 let charts = {};
+const PALETTE = ['#4f6ef7','#10b981','#f59e0b','#f43f5e','#8b5cf6','#06b6d4','#ec4899','#84cc16','#f97316','#6366f1'];
+
+function chartDefaults() {
+    const dark = document.body.classList.contains('dark');
+    return {
+        gridColor: dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)',
+        textColor: dark ? '#8b8fa3' : '#64748b',
+        tooltipBg: dark ? '#1a1d27' : '#fff',
+        tooltipBorder: dark ? '#2e3144' : '#e2e8f0',
+        tooltipText: dark ? '#e4e6eb' : '#1e293b',
+    };
+}
+
+function mxnTooltip(v) {
+    return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 }).format(v);
+}
+
+function sharedTooltip(d) {
+    return {
+        backgroundColor: d.tooltipBg,
+        borderColor: d.tooltipBorder,
+        borderWidth: 1,
+        titleColor: d.tooltipText,
+        bodyColor: d.tooltipText,
+        padding: 10,
+        cornerRadius: 8,
+        callbacks: { label: ctx => '  ' + mxnTooltip(ctx.parsed.y ?? ctx.parsed) }
+    };
+}
 
 async function loadDashboard() {
     const res = await fetch('/api/dashboard');
@@ -75,54 +104,95 @@ async function loadDashboard() {
     document.getElementById('kpiExpense').textContent = formatMXN(data.kpis.total_expense);
     document.getElementById('kpiNet').textContent = formatMXN(data.kpis.net_flow);
     document.getElementById('kpiCount').textContent = data.kpis.transaction_count.toLocaleString();
-
     const netEl = document.getElementById('kpiNet');
     netEl.classList.toggle('positive', data.kpis.net_flow > 0);
     netEl.classList.toggle('negative', data.kpis.net_flow < 0);
 
+    const d = chartDefaults();
+    const months = data.monthly.map(m => m.month.replace(' 2025','').replace(' 2026',' \'26'));
+
     // Monthly bar chart
-    const months = data.monthly.map(m => m.month.replace(/\s+\d{4}$/, '').substring(0, 6));
     if (charts.monthly) charts.monthly.destroy();
     charts.monthly = new Chart(document.getElementById('monthlyChart'), {
         type: 'bar',
         data: {
             labels: months,
             datasets: [
-                { label: 'Доход', data: data.monthly.map(m => m.income), backgroundColor: '#22c55e88', borderColor: '#22c55e', borderWidth: 1 },
-                { label: 'Расход', data: data.monthly.map(m => m.expense), backgroundColor: '#ef444488', borderColor: '#ef4444', borderWidth: 1 }
+                {
+                    label: 'Доход', data: data.monthly.map(m => m.income),
+                    backgroundColor: 'rgba(16,185,129,0.75)', borderColor: '#10b981',
+                    borderWidth: 1.5, borderRadius: 4, borderSkipped: false,
+                },
+                {
+                    label: 'Расход', data: data.monthly.map(m => m.expense),
+                    backgroundColor: 'rgba(244,63,94,0.75)', borderColor: '#f43f5e',
+                    borderWidth: 1.5, borderRadius: 4, borderSkipped: false,
+                }
             ]
         },
-        options: { responsive: true, scales: { y: { beginAtZero: true, ticks: { callback: v => (v/1e6).toFixed(1)+'M' } } } }
+        options: {
+            responsive: true, animation: { duration: 600 },
+            plugins: { legend: { labels: { color: d.textColor, font: { size: 12 } } }, tooltip: sharedTooltip(d) },
+            scales: {
+                x: { ticks: { color: d.textColor, font: { size: 11 } }, grid: { color: d.gridColor } },
+                y: { beginAtZero: true, ticks: { color: d.textColor, callback: v => (v/1e6).toFixed(1)+'M' }, grid: { color: d.gridColor } }
+            }
+        }
     });
 
-    // Cash flow line chart
+    // Cash flow line
     if (charts.cashFlow) charts.cashFlow.destroy();
     charts.cashFlow = new Chart(document.getElementById('cashFlowChart'), {
         type: 'line',
         data: {
             labels: months,
             datasets: [{
-                label: 'Чистый поток',
-                data: data.monthly.map(m => m.net),
-                borderColor: '#3b82f6',
-                backgroundColor: '#3b82f644',
-                fill: true, tension: 0.3
+                label: 'Чистый поток', data: data.monthly.map(m => m.net),
+                borderColor: '#4f6ef7', backgroundColor: 'rgba(79,110,247,0.1)',
+                fill: true, tension: 0.4, pointRadius: 4,
+                pointBackgroundColor: '#4f6ef7', pointBorderColor: '#fff', pointBorderWidth: 2,
+                pointHoverRadius: 6,
             }]
         },
-        options: { responsive: true, scales: { y: { ticks: { callback: v => (v/1e6).toFixed(1)+'M' } } } }
+        options: {
+            responsive: true, animation: { duration: 600 },
+            plugins: { legend: { labels: { color: d.textColor, font: { size: 12 } } }, tooltip: sharedTooltip(d) },
+            scales: {
+                x: { ticks: { color: d.textColor, font: { size: 11 } }, grid: { color: d.gridColor } },
+                y: { ticks: { color: d.textColor, callback: v => (v/1e6).toFixed(1)+'M' }, grid: { color: d.gridColor } }
+            }
+        }
     });
 
-    // Category donut
+    // Category donut — click filters table
     const topCats = data.category_breakdown.slice(0, 10);
-    const colors = ['#ef4444','#f97316','#eab308','#22c55e','#06b6d4','#3b82f6','#8b5cf6','#ec4899','#6b7280','#14b8a6'];
     if (charts.category) charts.category.destroy();
     charts.category = new Chart(document.getElementById('categoryChart'), {
         type: 'doughnut',
         data: {
             labels: topCats.map(c => c.category),
-            datasets: [{ data: topCats.map(c => c.amount), backgroundColor: colors }]
+            datasets: [{ data: topCats.map(c => c.amount), backgroundColor: PALETTE, borderWidth: 2, hoverOffset: 8 }]
         },
-        options: { responsive: true, plugins: { legend: { position: 'right', labels: { font: { size: 11 } } } } }
+        options: {
+            responsive: true, animation: { duration: 700 },
+            plugins: {
+                legend: { position: 'right', labels: { color: d.textColor, font: { size: 11 }, padding: 10, boxWidth: 12 } },
+                tooltip: {
+                    backgroundColor: d.tooltipBg, borderColor: d.tooltipBorder, borderWidth: 1,
+                    titleColor: d.tooltipText, bodyColor: d.tooltipText, padding: 10, cornerRadius: 8,
+                    callbacks: {
+                        label: ctx => '  ' + mxnTooltip(ctx.parsed) +
+                            '  (' + (ctx.parsed / topCats.reduce((s,c)=>s+c.amount,0) * 100).toFixed(1) + '%)'
+                    }
+                }
+            },
+            onClick: (evt, els) => {
+                if (!els.length) return;
+                const cat = topCats[els[0].index].category;
+                window.location.href = '/transactions?category=' + encodeURIComponent(cat);
+            },
+            onHover: (evt, els) => { evt.native.target.style.cursor = els.length ? 'pointer' : 'default'; }
+        }
     });
 
     // Category table

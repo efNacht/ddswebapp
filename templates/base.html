@@ -18,6 +18,7 @@
             <a href="/dashboard" class="nav-link {% if request.path == '/dashboard' %}active{% endif %}">Dashboard</a>
             <a href="/transactions" class="nav-link {% if request.path == '/transactions' %}active{% endif %}">Транзакции</a>
             <a href="/reports" class="nav-link {% if request.path == '/reports' %}active{% endif %}">Отчёты</a>
+            <button class="btn-theme" id="themeBtn" onclick="toggleTheme()" title="Светлая/тёмная тема">🌙</button>
             <button class="btn btn-reset-nav" onclick="resetData()" title="Удалить все данные и начать заново">↺ Сброс</button>
         </div>
         <script>
@@ -26,6 +27,21 @@
             await fetch('/api/reset', { method: 'POST' });
             window.location.href = '/';
         }
+        function toggleTheme() {
+            const dark = document.body.classList.toggle('dark');
+            localStorage.setItem('theme', dark ? 'dark' : 'light');
+            document.getElementById('themeBtn').textContent = dark ? '☀️' : '🌙';
+        }
+        (function() {
+            const t = localStorage.getItem('theme') || 'light';
+            if (t === 'dark') {
+                document.body.classList.add('dark');
+                document.addEventListener('DOMContentLoaded', () => {
+                    const btn = document.getElementById('themeBtn');
+                    if (btn) btn.textContent = '☀️';
+                });
+            }
+        })();
         </script>
     </nav>
 
