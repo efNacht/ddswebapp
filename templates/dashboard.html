@@ -24,52 +24,42 @@
         <div id="anomaliesList"></div>
     </div>
 
-    <!-- Charts row 1 -->
-    <div class="charts-grid">
-        <div class="chart-card">
-            <h3>Доходы vs Расходы по месяцам</h3>
-            <canvas id="monthlyChart"></canvas>
-        </div>
-        <div class="chart-card">
-            <h3>Чистый денежный поток</h3>
-            <canvas id="cashFlowChart"></canvas>
-        </div>
+    <!-- Row 1: Monthly bar chart (full width) -->
+    <div class="chart-card" style="margin-top:16px">
+        <h3>Доходы и расходы по месяцам</h3>
+        <canvas id="monthlyChart" style="max-height:260px"></canvas>
     </div>
 
-    <!-- Charts row 2 -->
+    <!-- Row 2: Category donut + monthly table -->
     <div class="charts-grid" style="margin-top:16px">
         <div class="chart-card">
-            <h3>Расходы по категориям (топ-10)</h3>
+            <h3>Расходы по категориям <span style="font-size:12px;font-weight:400;color:var(--text-dim)">— нажмите сегмент для фильтра</span></h3>
             <canvas id="categoryChart"></canvas>
         </div>
         <div class="chart-card">
-            <h3>Расходы по категориям</h3>
-            <div class="table-scroll" id="categoryTable"></div>
+            <h3>Итоги по месяцам</h3>
+            <div class="table-scroll" id="monthlyBreakdown"></div>
         </div>
     </div>
 
-    <!-- Monthly summary table -->
+    <!-- Row 3: Category × Month matrix (full width, main breakdown) -->
     <div class="chart-card" style="margin-top:16px">
-        <h3>Итоги по месяцам</h3>
-        <div class="table-scroll" id="monthlyBreakdown"></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+            <h3 style="margin:0">Расходы по категориям и месяцам</h3>
+            <div style="display:flex;align-items:center;gap:8px">
+                <span style="font-size:12px;color:var(--text-dim)">Фильтр:</span>
+                <select id="matrixMonthFilter" class="filter-select" onchange="filterMatrix()">
+                    <option value="">Все месяцы</option>
+                </select>
+            </div>
+        </div>
+        <div class="table-scroll" id="categoryMatrix" style="max-height:520px"></div>
     </div>
 
-    <!-- Category × Month matrix -->
+    <!-- Row 4: Top 5 transactions -->
     <div class="chart-card" style="margin-top:16px">
-        <h3>Расходы по категориям и месяцам</h3>
-        <div class="table-scroll" id="categoryMatrix" style="max-height:480px"></div>
-    </div>
-
-    <!-- Top transactions + Balance chart -->
-    <div class="charts-grid" style="margin-top:16px">
-        <div class="chart-card">
-            <h3>Крупнейшие расходы</h3>
-            <canvas id="topExpChart"></canvas>
-        </div>
-        <div class="chart-card">
-            <h3>Топ-5 транзакций</h3>
-            <div id="topTxnList"></div>
-        </div>
+        <h3>Топ-5 крупнейших расходов</h3>
+        <div id="topTxnList"></div>
     </div>
 </div>
 {% endblock %}
@@ -77,6 +67,7 @@
 {% block scripts %}
 <script>
 let charts = {};
+let matrixData = null;
 const PALETTE = ['#4f6ef7','#10b981','#f59e0b','#f43f5e','#8b5cf6','#06b6d4','#ec4899','#84cc16','#f97316','#6366f1'];
 
 function chartDefaults() {
@@ -90,20 +81,16 @@ function chartDefaults() {
     };
 }
 
-function mxnTooltip(v) {
-    return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 }).format(v);
+function formatMXN(n) {
+    if (n == null) return '—';
+    return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 }).format(n);
 }
 
 function sharedTooltip(d) {
     return {
-        backgroundColor: d.tooltipBg,
-        borderColor: d.tooltipBorder,
-        borderWidth: 1,
-        titleColor: d.tooltipText,
-        bodyColor: d.tooltipText,
-        padding: 10,
-        cornerRadius: 8,
-        callbacks: { label: ctx => '  ' + mxnTooltip(ctx.parsed.y ?? ctx.parsed) }
+        backgroundColor: d.tooltipBg, borderColor: d.tooltipBorder, borderWidth: 1,
+        titleColor: d.tooltipText, bodyColor: d.tooltipText, padding: 10, cornerRadius: 8,
+        callbacks: { label: ctx => '  ' + formatMXN(ctx.parsed.y ?? ctx.parsed.x ?? ctx.parsed) }
     };
 }
 
@@ -123,7 +110,7 @@ async function loadDashboard() {
     const d = chartDefaults();
     const months = data.monthly.map(m => m.month.replace(' 2025','').replace(' 2026',' \'26'));
 
-    // Monthly bar chart
+    // Monthly bar + line chart (income bars, expense bars, net line)
     if (charts.monthly) charts.monthly.destroy();
     charts.monthly = new Chart(document.getElementById('monthlyChart'), {
         type: 'bar',
@@ -132,19 +119,32 @@ async function loadDashboard() {
             datasets: [
                 {
                     label: 'Доход', data: data.monthly.map(m => m.income),
-                    backgroundColor: 'rgba(16,185,129,0.75)', borderColor: '#10b981',
-                    borderWidth: 1.5, borderRadius: 4, borderSkipped: false,
+                    backgroundColor: 'rgba(16,185,129,0.7)', borderColor: '#10b981',
+                    borderWidth: 1.5, borderRadius: 4, borderSkipped: false, order: 2,
                 },
                 {
                     label: 'Расход', data: data.monthly.map(m => m.expense),
-                    backgroundColor: 'rgba(244,63,94,0.75)', borderColor: '#f43f5e',
-                    borderWidth: 1.5, borderRadius: 4, borderSkipped: false,
+                    backgroundColor: 'rgba(244,63,94,0.7)', borderColor: '#f43f5e',
+                    borderWidth: 1.5, borderRadius: 4, borderSkipped: false, order: 2,
+                },
+                {
+                    label: 'Чистый поток', data: data.monthly.map(m => m.net),
+                    type: 'line', borderColor: '#4f6ef7', backgroundColor: 'transparent',
+                    borderWidth: 2.5, tension: 0.3, pointRadius: 4,
+                    pointBackgroundColor: '#4f6ef7', pointBorderColor: '#fff', pointBorderWidth: 2,
+                    pointHoverRadius: 6, order: 1,
                 }
             ]
         },
         options: {
             responsive: true, animation: { duration: 600 },
-            plugins: { legend: { labels: { color: d.textColor, font: { size: 12 } } }, tooltip: sharedTooltip(d) },
+            plugins: {
+                legend: { labels: { color: d.textColor, font: { size: 12 } } },
+                tooltip: {
+                    ...sharedTooltip(d),
+                    callbacks: { label: ctx => `  ${ctx.dataset.label}: ${formatMXN(ctx.parsed.y)}` }
+                }
+            },
             scales: {
                 x: { ticks: { color: d.textColor, font: { size: 11 } }, grid: { color: d.gridColor } },
                 y: { beginAtZero: true, ticks: { color: d.textColor, callback: v => (v/1e6).toFixed(1)+'M' }, grid: { color: d.gridColor } }
@@ -152,31 +152,7 @@ async function loadDashboard() {
         }
     });
 
-    // Cash flow line
-    if (charts.cashFlow) charts.cashFlow.destroy();
-    charts.cashFlow = new Chart(document.getElementById('cashFlowChart'), {
-        type: 'line',
-        data: {
-            labels: months,
-            datasets: [{
-                label: 'Чистый поток', data: data.monthly.map(m => m.net),
-                borderColor: '#4f6ef7', backgroundColor: 'rgba(79,110,247,0.1)',
-                fill: true, tension: 0.4, pointRadius: 4,
-                pointBackgroundColor: '#4f6ef7', pointBorderColor: '#fff', pointBorderWidth: 2,
-                pointHoverRadius: 6,
-            }]
-        },
-        options: {
-            responsive: true, animation: { duration: 600 },
-            plugins: { legend: { labels: { color: d.textColor, font: { size: 12 } } }, tooltip: sharedTooltip(d) },
-            scales: {
-                x: { ticks: { color: d.textColor, font: { size: 11 } }, grid: { color: d.gridColor } },
-                y: { ticks: { color: d.textColor, callback: v => (v/1e6).toFixed(1)+'M' }, grid: { color: d.gridColor } }
-            }
-        }
-    });
-
-    // Category donut — click filters table
+    // Category donut
     const topCats = data.category_breakdown.slice(0, 10);
     if (charts.category) charts.category.destroy();
     charts.category = new Chart(document.getElementById('categoryChart'), {
@@ -193,31 +169,18 @@ async function loadDashboard() {
                     backgroundColor: d.tooltipBg, borderColor: d.tooltipBorder, borderWidth: 1,
                     titleColor: d.tooltipText, bodyColor: d.tooltipText, padding: 10, cornerRadius: 8,
                     callbacks: {
-                        label: ctx => '  ' + mxnTooltip(ctx.parsed) +
+                        label: ctx => '  ' + formatMXN(ctx.parsed) +
                             '  (' + (ctx.parsed / topCats.reduce((s,c)=>s+c.amount,0) * 100).toFixed(1) + '%)'
                     }
                 }
             },
             onClick: (evt, els) => {
                 if (!els.length) return;
-                const cat = topCats[els[0].index].category;
-                window.location.href = '/transactions?category=' + encodeURIComponent(cat);
+                window.location.href = '/transactions?category=' + encodeURIComponent(topCats[els[0].index].category);
             },
             onHover: (evt, els) => { evt.native.target.style.cursor = els.length ? 'pointer' : 'default'; }
         }
     });
-
-    // Category table
-    const cats = data.category_breakdown || [];
-    const totalExp = cats.reduce((s, c) => s + c.amount, 0);
-    let catHtml = '<table class="data-table compact"><thead><tr><th>Категория</th><th class="num">Сумма</th><th class="num">%</th></tr></thead><tbody>';
-    for (const c of cats) {
-        const pct = totalExp > 0 ? (c.amount / totalExp * 100).toFixed(1) : 0;
-        catHtml += `<tr><td>${c.category}</td><td class="num">${formatMXN(c.amount)}</td><td class="num" style="color:var(--text-dim)">${pct}%</td></tr>`;
-    }
-    catHtml += `<tr style="font-weight:700;border-top:2px solid var(--border)"><td>Итого расходы</td><td class="num">${formatMXN(totalExp)}</td><td></td></tr>`;
-    catHtml += '</tbody></table>';
-    document.getElementById('categoryTable').innerHTML = catHtml;
 
     // Monthly summary table
     const monthly = data.monthly || [];
@@ -225,90 +188,46 @@ async function loadDashboard() {
     let tI=0, tE=0, tN=0;
     for (const m of monthly) {
         tI+=m.income; tE+=m.expense; tN+=m.net;
-        mHtml += `<tr><td style="white-space:nowrap">${m.month}</td><td class="num positive">${formatMXN(m.income)}</td><td class="num negative">${formatMXN(m.expense)}</td><td class="num ${m.net>=0?'positive':'negative'}">${formatMXN(m.net)}</td></tr>`;
+        const netCls = m.net>=0 ? 'positive' : 'negative';
+        mHtml += `<tr style="cursor:pointer" onclick="filterMatrixByMonth('${m.month}')">
+            <td style="white-space:nowrap">${m.month}</td>
+            <td class="num positive">${formatMXN(m.income)}</td>
+            <td class="num negative">${formatMXN(m.expense)}</td>
+            <td class="num ${netCls}">${formatMXN(m.net)}</td>
+        </tr>`;
     }
-    mHtml += `<tr style="font-weight:700;border-top:2px solid var(--border)"><td>ИТОГО</td><td class="num positive">${formatMXN(tI)}</td><td class="num negative">${formatMXN(tE)}</td><td class="num ${tN>=0?'positive':'negative'}">${formatMXN(tN)}</td></tr></tbody></table>`;
+    mHtml += `<tr style="font-weight:700;border-top:2px solid var(--border)">
+        <td>ИТОГО</td>
+        <td class="num positive">${formatMXN(tI)}</td>
+        <td class="num negative">${formatMXN(tE)}</td>
+        <td class="num ${tN>=0?'positive':'negative'}">${formatMXN(tN)}</td>
+    </tr></tbody></table>`;
+    mHtml += '<p style="font-size:11px;color:var(--text-dim);margin-top:6px">↑ нажмите строку — фильтр матрицы</p>';
     document.getElementById('monthlyBreakdown').innerHTML = mHtml;
 
-    // Load matrix + top transactions async
+    // Load matrix async
     loadMatrix(d);
 }
 
 async function loadMatrix(d) {
     const res = await fetch('/api/dashboard/matrix');
     if (!res.ok) return;
-    const data = await res.json();
+    matrixData = await res.json();
 
-    // Category × Month matrix table
-    const months = data.months || [];
-    const cats = data.categories || [];
-    const matrix = data.matrix || {};
-    const shortMonths = months.map(m => m.replace(' 2025','').replace(' 2026',' \'26'));
-
-    let html = '<table class="data-table compact matrix-table"><thead><tr><th style="min-width:160px;position:sticky;left:0;background:var(--surface2)">Категория</th>';
-    shortMonths.forEach(m => { html += `<th class="num">${m}</th>`; });
-    html += '<th class="num" style="background:var(--surface2);position:sticky;right:0">ИТОГО</th></tr></thead><tbody>';
-
-    const maxVal = Math.max(...cats.map(c => data.cat_totals[c] || 0));
-
-    for (const cat of cats) {
-        const total = data.cat_totals[cat] || 0;
-        const intensity = maxVal > 0 ? total / maxVal : 0;
-        html += `<tr><td style="position:sticky;left:0;background:var(--surface);font-weight:500">${cat}</td>`;
-        for (const month of months) {
-            const val = matrix[cat]?.[month] || 0;
-            const opacity = val > 0 ? (0.08 + 0.55 * (val / (data.month_totals[month] || 1))) : 0;
-            const bg = val > 0 ? `background:rgba(244,63,94,${opacity.toFixed(2)})` : '';
-            html += `<td class="num" style="${bg}">${val > 0 ? formatMXN(val) : '—'}</td>`;
-        }
-        const barW = (intensity * 60).toFixed(0);
-        html += `<td class="num" style="position:sticky;right:0;background:var(--surface);font-weight:600">${formatMXN(total)}</td></tr>`;
-    }
-
-    // Month totals row
-    html += `<tr style="font-weight:700;border-top:2px solid var(--border)"><td style="position:sticky;left:0;background:var(--surface2)">ИТОГО</td>`;
-    for (const month of months) {
-        html += `<td class="num negative">${formatMXN(data.month_totals[month] || 0)}</td>`;
-    }
-    html += `<td style="position:sticky;right:0;background:var(--surface2)" class="num negative">${formatMXN(Object.values(data.month_totals).reduce((s,v)=>s+v,0))}</td></tr>`;
-    html += '</tbody></table>';
-    document.getElementById('categoryMatrix').innerHTML = html;
-
-    // Top expenses bar chart
-    const topCats = data.categories.slice(0, 8);
-    const topVals = topCats.map(c => data.cat_totals[c] || 0);
-    const d2 = d || chartDefaults();
-    if (charts.topExp) charts.topExp.destroy();
-    charts.topExp = new Chart(document.getElementById('topExpChart'), {
-        type: 'bar',
-        data: {
-            labels: topCats,
-            datasets: [{ data: topVals, backgroundColor: PALETTE, borderRadius: 6, borderSkipped: false }]
-        },
-        options: {
-            indexAxis: 'y', responsive: true, animation: { duration: 500 },
-            plugins: {
-                legend: { display: false },
-                tooltip: {
-                    backgroundColor: d2.tooltipBg, borderColor: d2.tooltipBorder, borderWidth: 1,
-                    titleColor: d2.tooltipText, bodyColor: d2.tooltipText, padding: 10, cornerRadius: 8,
-                    callbacks: { label: ctx => '  ' + formatMXN(ctx.parsed.x) }
-                }
-            },
-            scales: {
-                x: { ticks: { color: d2.textColor, callback: v => (v/1e6).toFixed(1)+'M' }, grid: { color: d2.gridColor } },
-                y: { ticks: { color: d2.textColor, font: { size: 12 } }, grid: { display: false } }
-            },
-            onClick: (evt, els) => {
-                if (!els.length) return;
-                window.location.href = '/transactions?category=' + encodeURIComponent(topCats[els[0].index]);
-            },
-            onHover: (evt, els) => { evt.native.target.style.cursor = els.length ? 'pointer' : 'default'; }
-        }
+    // Populate month filter dropdown
+    const sel = document.getElementById('matrixMonthFilter');
+    sel.innerHTML = '<option value="">Все месяцы</option>';
+    (matrixData.months || []).forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m;
+        opt.textContent = m;
+        sel.appendChild(opt);
     });
 
-    // Top 5 transactions list
-    const txns = data.top_transactions || [];
+    renderMatrix('');
+
+    // Top 5 transactions
+    const txns = matrixData.top_transactions || [];
     document.getElementById('topTxnList').innerHTML = txns.map((t, i) => `
         <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)">
             <span style="font-size:18px;font-weight:800;color:var(--border);min-width:24px">${i+1}</span>
@@ -316,9 +235,97 @@ async function loadMatrix(d) {
                 <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.description || t.concept}</div>
                 <div style="font-size:11px;color:var(--text-dim)">${t.category} · ${t.month}</div>
             </div>
-            <span style="font-size:14px;font-weight:700;color:var(--expense);white-space:nowrap">${formatMXN(t.amount)}</span>
+            <a href="/transactions?category=${encodeURIComponent(t.category)}&month=${encodeURIComponent(t.month)}"
+               style="font-size:14px;font-weight:700;color:var(--expense);white-space:nowrap;text-decoration:none">
+                ${formatMXN(t.amount)}
+            </a>
         </div>
     `).join('');
+}
+
+function filterMatrix() {
+    const month = document.getElementById('matrixMonthFilter').value;
+    renderMatrix(month);
+}
+
+function filterMatrixByMonth(month) {
+    document.getElementById('matrixMonthFilter').value = month;
+    renderMatrix(month);
+    document.getElementById('categoryMatrix').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function renderMatrix(filterMonth) {
+    if (!matrixData) return;
+
+    const allMonths = matrixData.months || [];
+    const cats = matrixData.categories || [];
+    const matrix = matrixData.matrix || {};
+    const months = filterMonth ? [filterMonth] : allMonths;
+    const shortMonths = months.map(m => m.replace(' 2025','').replace(' 2026',' \'26'));
+
+    // When filtering: show % of month total
+    const showPct = !!filterMonth;
+
+    let html = '<table class="data-table compact matrix-table"><thead><tr>';
+    html += '<th style="min-width:160px;position:sticky;left:0;background:var(--surface2)">Категория</th>';
+    shortMonths.forEach(m => { html += `<th class="num">${m}</th>`; });
+    if (!filterMonth) html += '<th class="num" style="position:sticky;right:0;background:var(--surface2)">ИТОГО</th>';
+    if (showPct) html += '<th class="num">% месяца</th>';
+    html += '</tr></thead><tbody>';
+
+    const monthTotal = filterMonth ? (matrixData.month_totals[filterMonth] || 0) : 0;
+
+    // Sort cats by amount in selected month (or by total)
+    let sortedCats = [...cats];
+    if (filterMonth) {
+        sortedCats.sort((a, b) => (matrix[b]?.[filterMonth] || 0) - (matrix[a]?.[filterMonth] || 0));
+    }
+
+    const maxVal = filterMonth
+        ? Math.max(...sortedCats.map(c => matrix[c]?.[filterMonth] || 0))
+        : Math.max(...cats.map(c => matrixData.cat_totals[c] || 0));
+
+    for (const cat of sortedCats) {
+        // Skip rows with zero in the selected month
+        if (filterMonth && !(matrix[cat]?.[filterMonth] > 0)) continue;
+
+        const total = matrixData.cat_totals[cat] || 0;
+        html += `<tr style="cursor:pointer" onclick="window.location='/transactions?category=${encodeURIComponent(cat)}${filterMonth ? '&month='+encodeURIComponent(filterMonth) : ''}'">`;
+        html += `<td style="position:sticky;left:0;background:var(--surface);font-weight:500">${cat}</td>`;
+
+        for (const month of months) {
+            const val = matrix[cat]?.[month] || 0;
+            const ref = filterMonth ? monthTotal : (matrixData.month_totals[month] || 1);
+            const opacity = val > 0 ? (0.08 + 0.55 * (val / ref)) : 0;
+            const bg = val > 0 ? `background:rgba(244,63,94,${opacity.toFixed(2)})` : '';
+            html += `<td class="num" style="${bg}">${val > 0 ? formatMXN(val) : '—'}</td>`;
+        }
+
+        if (!filterMonth) {
+            html += `<td class="num" style="position:sticky;right:0;background:var(--surface);font-weight:600">${formatMXN(total)}</td>`;
+        }
+        if (showPct) {
+            const pct = monthTotal > 0 ? (((matrix[cat]?.[filterMonth] || 0) / monthTotal) * 100).toFixed(1) : '0';
+            html += `<td class="num" style="color:var(--text-dim)">${pct}%</td>`;
+        }
+        html += '</tr>';
+    }
+
+    // Totals row
+    html += `<tr style="font-weight:700;border-top:2px solid var(--border)">`;
+    html += `<td style="position:sticky;left:0;background:var(--surface2)">ИТОГО расходы</td>`;
+    for (const month of months) {
+        html += `<td class="num negative">${formatMXN(matrixData.month_totals[month] || 0)}</td>`;
+    }
+    if (!filterMonth) {
+        const grandTotal = Object.values(matrixData.month_totals).reduce((s,v)=>s+v,0);
+        html += `<td style="position:sticky;right:0;background:var(--surface2)" class="num negative">${formatMXN(grandTotal)}</td>`;
+    }
+    if (showPct) html += '<td class="num">100%</td>';
+    html += '</tr></tbody></table>';
+    html += '<p style="font-size:11px;color:var(--text-dim);margin-top:6px">↑ нажмите строку — перейти к транзакциям</p>';
+
+    document.getElementById('categoryMatrix').innerHTML = html;
 }
 
 async function loadAnomalies() {
@@ -347,11 +354,6 @@ async function resetData() {
     if (!confirm('Сбросить все данные?')) return;
     await fetch('/api/reset', { method: 'POST' });
     window.location.href = '/';
-}
-
-function formatMXN(n) {
-    if (n == null) return '—';
-    return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 }).format(n);
 }
 
 document.addEventListener('DOMContentLoaded', loadDashboard);
