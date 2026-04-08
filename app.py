@@ -175,10 +175,10 @@ def gemini_anomalies():
         monthly = app_state["monthly_agg"]
         summary_lines = []
         for month, cats in sorted(monthly.items()):
-            total_in = sum(d.get("abono", 0) for d in cats.values() if isinstance(d, dict))
-            total_out = sum(d.get("cargo", 0) for d in cats.values() if isinstance(d, dict))
+            total_in = sum(d.get("abono", 0) for k, d in cats.items() if k != "_total" and isinstance(d, dict))
+            total_out = sum(d.get("cargo", 0) for k, d in cats.items() if k != "_total" and isinstance(d, dict))
             top_cats = sorted(
-                [(k, v["cargo"]) for k, v in cats.items() if isinstance(v, dict) and v.get("cargo", 0) > 0],
+                [(k, v["cargo"]) for k, v in cats.items() if k != "_total" and isinstance(v, dict) and v.get("cargo", 0) > 0],
                 key=lambda x: -x[1]
             )[:4]
             top_str = ", ".join(f"{k}={v:,.0f}" for k, v in top_cats)
@@ -535,8 +535,9 @@ def api_dashboard():
     months_data = []
     for month in sorted_months:
         cats = monthly[month]
-        income = sum(d.get("abono", 0) for d in cats.values())
-        expense = sum(d.get("cargo", 0) for d in cats.values())
+        # Exclude _total key — it's a pre-aggregated sum of all categories, would double-count
+        income = sum(d.get("abono", 0) for k, d in cats.items() if k != "_total")
+        expense = sum(d.get("cargo", 0) for k, d in cats.items() if k != "_total")
         months_data.append({
             "month": month,
             "income": round(income, 2),
