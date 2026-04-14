@@ -106,16 +106,18 @@ def parse_sales_report(filepath=None):
     return result
 
 
-def generate_pl_data(categorized_transactions, sales_data=None, usd_mxn_rate=None):
+def generate_pl_data(categorized_transactions, sales_data=None, usd_mxn_rate=None, helpdesk_data=None):
     """Generate P&L data from categorized transactions and sales report.
 
     Args:
         categorized_transactions: list of categorized transaction dicts
         sales_data: output of parse_sales_report()
         usd_mxn_rate: USD/MXN exchange rate for selfcost conversion
+        helpdesk_data: dict with keys 'writeoffs', 'mercadopago' from HELPDESK parser
 
     Returns dict of PL line items.
     """
+    helpdesk_data = helpdesk_data or {}
     from categorizer import normalize_category
 
     # Aggregate bank data by category
@@ -152,11 +154,15 @@ def generate_pl_data(categorized_transactions, sales_data=None, usd_mxn_rate=Non
     else:
         avg_rate = usd_mxn_rate or 20.5
 
+    selfcost_is_estimated = False
     if sales_data and sales_data["total_selfcost_usd"] > 0:
         selfcost = sales_data["total_selfcost_usd"] * avg_rate
     else:
-        # Approximate: ~30% of revenue ex VAT (typical for Faberlic)
+        # WARNING: No sales report — selfcost is estimated at 30% of revenue ex VAT.
+        # This is a rough approximation. Upload Sales Report for accurate figures.
         selfcost = revenue_ex_vat * 0.30
+        selfcost_is_estimated = True
+        print("WARNING: Selfcost estimated at 30% of revenue (no sales report). Upload Sales Report for accuracy.")
 
     gross_profit = revenue_ex_vat - selfcost
     gross_margin = gross_profit / revenue_ex_vat if revenue_ex_vat > 0 else 0
@@ -165,7 +171,9 @@ def generate_pl_data(categorized_transactions, sales_data=None, usd_mxn_rate=Non
     order_count = sales_data["order_count"] if sales_data else 0
 
     # Расходы склада
-    rent = RENT_MONTHLY * num_months
+    # Use actual bank data for rent if available, fall back to hardcoded only if zero
+    rent_from_bank = by_cat["Аренда склада"]["cargo"]
+    rent = rent_from_bank if rent_from_bank > 0 else RENT_MONTHLY * num_months
     packaging = PACKAGING_PER_ORDER * order_count if order_count > 0 else by_cat.get("Упаковка", {}).get("cargo", 0)
     warehouse_salary = by_cat["ЗП склад"]["cargo"]
     warehouse_utilities = by_cat["Коммунальные платежи"]["cargo"]
@@ -176,8 +184,16 @@ def generate_pl_data(categorized_transactions, sales_data=None, usd_mxn_rate=Non
 
     # Коммерческие расходы
     transport = by_cat["Транспортные в регион"]["cargo"]
-    # transport_formula = revenue_ex_vat * DELIVERY_PCT  # formula-based
-    acquiring = revenue_ex_vat * ACQUIRING_PCT
+
+    # Acquiring: use actual data, NOT a hardcoded 2.9% formula
+    # Priority: 1) HELPDESK MercadoPago commission, 2) bank category, 3) zero
+    mp_data = helpdesk_data.get("mercadopago")
+    if mp_data and mp_data.get("total_commission", 0) > 0:
+        acquiring = mp_data["total_commission"]
+    else:
+        # Use bank transactions categorized as acquiring/payment terminal
+        acquiring = by_cat["Эквайринг"]["cargo"]
+
     agent_commission = 0  # агентское вознаграждение
     total_commercial_variable = transport + acquiring + agent_commission
 
@@ -193,16 +209,25 @@ def generate_pl_data(categorized_transactions, sales_data=None, usd_mxn_rate=Non
     bank_services = by_cat["Услуги банка"]["cargo"]
     other_expenses = by_cat["Прочие расходы"]["cargo"]
     catalog = by_cat["Реклама каталог"]["cargo"]
-    writeoffs = revenue_ex_vat * WRITEOFF_PCT
+    # Write-offs: use actual HELPDESK data if available, else bank data, NOT hardcoded 1%
+    hd_writeoffs = helpdesk_data.get("writeoffs")
+    if hd_writeoffs and hd_writeoffs.get("total_amount", 0) > 0:
+        writeoffs = hd_writeoffs["total_amount"]
+    else:
+        writeoffs_from_bank = by_cat["Списание продукции"]["cargo"]
+        writeoffs = writeoffs_from_bank if writeoffs_from_bank > 0 else 0
     customs = by_cat["Услуги по таможенному оформлению"]["cargo"]
 
     total_fixed = office_salary + stimulation + accounting + bank_services + other_expenses + catalog + writeoffs + customs
 
     # Налоги
+    # NOTE: НДС is NOT included here — it's already deducted from revenue above
+    # (revenue → revenue_ex_vat). Adding bank НДС payments to expenses would
+    # double-count it. We only track payroll-related taxes as OPEX.
     tax_fot = by_cat["Налог на сотрудников"]["cargo"]
     tax_leaders = by_cat["Налог на выплаты лидерам"]["cargo"]
-    tax_vat = by_cat["НДС"]["cargo"]
-    total_tax = tax_fot + tax_leaders + tax_vat
+    tax_vat = by_cat["НДС"]["cargo"]  # tracked for reference only, NOT in total
+    total_tax = tax_fot + tax_leaders
 
     # Итого операционные расходы
     total_opex = total_warehouse + total_commercial_variable + total_leader + total_fixed + total_tax
@@ -217,6 +242,7 @@ def generate_pl_data(categorized_transactions, sales_data=None, usd_mxn_rate=Non
         "vat": vat,
         "revenue_ex_vat": revenue_ex_vat,
         "selfcost": selfcost,
+        "selfcost_is_estimated": selfcost_is_estimated,
         "gross_profit": gross_profit,
         "gross_margin": gross_margin,
 
@@ -345,7 +371,8 @@ def write_pl_excel(pl_data, output_path=None):
     add_row(r, "Объем продаж (с НДС)", pl_data["revenue"], False, 0, True); r += 1
     add_row(r, "НДС", pl_data["vat"], False, 1); r += 1
     add_row(r, "ОП без НДС", pl_data["revenue_ex_vat"], True, 0, True); r += 1
-    add_row(r, "Себестоимость", pl_data["selfcost"], True, 0); r += 1
+    selfcost_label = "Себестоимость" + (" (⚠ оценка 30%)" if pl_data.get("selfcost_is_estimated") else "")
+    add_row(r, selfcost_label, pl_data["selfcost"], True, 0); r += 1
     add_row(r, "Валовая прибыль", pl_data["gross_profit"], True, 0, False, True); r += 1
 
     r += 1
@@ -367,7 +394,7 @@ def write_pl_excel(pl_data, output_path=None):
     add_row(r, "Коммерческие расходы", 0, False, 0, True); r += 1
     c = pl_data["commercial"]
     add_row(r, "транспортные (в регионы)", c["transport"], True, 1); r += 1
-    add_row(r, "услуги за терминальную оплату (эквайринг 2.9%)", c["acquiring"], True, 1); r += 1
+    add_row(r, "эквайринг (факт)", c["acquiring"], True, 1); r += 1
     add_row(r, "Итого коммерческие", c["total"], True, 0, False, True); r += 1
 
     r += 1
@@ -386,7 +413,7 @@ def write_pl_excel(pl_data, output_path=None):
     add_row(r, "услуги банка (РКО)", f["bank_services"], True, 1); r += 1
     add_row(r, "прочие расходы", f["other"], True, 1); r += 1
     add_row(r, "реклама каталог", f["catalog"], True, 1); r += 1
-    add_row(r, "списание продукции (1%)", f["writeoffs"], True, 1); r += 1
+    add_row(r, "списание продукции (факт)", f["writeoffs"], True, 1); r += 1
     add_row(r, "таможенное оформление", f["customs"], True, 1); r += 1
     add_row(r, "Итого постоянные расходы", f["total"], True, 0, False, True); r += 1
 
@@ -395,7 +422,7 @@ def write_pl_excel(pl_data, output_path=None):
     t = pl_data["taxes"]
     add_row(r, "налоги ФОТ", t["fot"], True, 1); r += 1
     add_row(r, "налоги за выплаты лидерам", t["leaders"], True, 1); r += 1
-    add_row(r, "НДС уплаченный", t["vat"], True, 1); r += 1
+    add_row(r, "НДС уплаченный (справочно, не в OPEX)", t["vat"], False, 1); r += 1
     add_row(r, "Итого налоги", t["total"], True, 0, False, True); r += 1
 
     r += 1
@@ -443,7 +470,7 @@ def print_pl_summary(pl):
     print(f"    коммунальные                {pl['warehouse']['utilities']:>15,.0f}")
     print(f"  Коммерческие расходы          {pl['commercial']['total']:>15,.0f}  {pct(pl['commercial']['total'])}")
     print(f"    транспортные                {pl['commercial']['transport']:>15,.0f}")
-    print(f"    эквайринг (2.9%)            {pl['commercial']['acquiring']:>15,.0f}")
+    print(f"    эквайринг (факт)            {pl['commercial']['acquiring']:>15,.0f}")
     print(f"  Комиссии лидерам              {pl['leaders']['total']:>15,.0f}  {pct(pl['leaders']['total'])}")
     print(f"  Постоянные расходы            {pl['fixed']['total']:>15,.0f}  {pct(pl['fixed']['total'])}")
     print(f"    ЗП офис                     {pl['fixed']['office_salary']:>15,.0f}")

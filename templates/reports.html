@@ -32,6 +32,7 @@ async function loadReports() {
         'pl-template': 'Шаблон компании PL: фактические расходы из банка по статьям',
         'reconciliation': 'Сверка поступлений OpenPay / MercadoPago с банковской выпиской',
         'tax': 'Налоговые платежи: ИСР, ИВА, взносы — помесячно с анализом НДС',
+        'helpdesk': 'Данные партнёра HELPDESK: возвраты, списания, MercadoPago комиссии',
     };
 
     grid.innerHTML = data.reports.map(r => `

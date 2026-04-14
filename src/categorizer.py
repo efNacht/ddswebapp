@@ -99,7 +99,8 @@ CONCEPT_KEYWORD_RULES = [
     (r"(?i)^factura\s+evento\b", "Стимулирование продаж"),
     (r"(?i)\bevento\b.*\bcancun\b", "Стимулирование продаж"),
     (r"(?i)^reunion\b", "Стимулирование продаж"),
-    (r"(?i)^pago\s+marketing\b", "Стимулирование продаж"),
+    # pago marketing = marketing services payment → ЗП офис (handled in later rules)
+    # (r"(?i)^pago\s+marketing\b", "Стимулирование продаж"),  # REMOVED: conflicts with line 154
     (r"(?i)^segundo\s+pago\s+evento\b", "Стимулирование продаж"),
 
     # Транспортные в регион — Estafeta tracking numbers (961...)
@@ -173,7 +174,8 @@ CONCEPT_KEYWORD_RULES = [
 
     # НДС — federal tax payments
     (r"(?i)^reembolso\s+factura\s+mercado\b", "Услуги банка"),
-    (r"(?i)^facturacion\b", "Бухгалтерские услуги"),
+    # facturacion = JT (transport invoicing), handled below in BENEFICIARY_RULES_EXTRA
+    # (r"(?i)^facturacion\b", "Бухгалтерские услуги"),  # REMOVED: conflicts with line 266
 
     # Resico payments — leader tax regime
     (r"(?i)^resico\b", "Налог на выплаты лидерам"),
@@ -309,7 +311,7 @@ WILLIAM_CATEGORY_MAP = {
     "зп пилар": "ЗП склад",
     "зп брайану": "ЗП склад",
     "зп росио": "ЗП склад",
-    "фонд анастасия": "ОС лидерам",
+    "фонд анастасия": "ЗП офис",  # fondo anastasia = reimbursable office fund, not leader OS
     "предоплата за каталоги": "Реклама каталог",
     "за каталоги": "Реклама каталог",
     "эстафета": "Транспортные в регион",

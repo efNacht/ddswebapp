@@ -112,15 +112,24 @@ def _claude_complete(prompt):
     return msg.content[0].text.strip()
 
 
-def gemini_categorize(transactions):
-    """Use Claude Haiku to categorize UNKNOWN transactions."""
+def ai_categorize(transactions):
+    """Use Claude Haiku to categorize UNKNOWN transactions.
+
+    IMPORTANT: Only uses rule-based categorizations as examples, never
+    user-edited ones. This prevents the AI from just echoing back
+    what the user already set (bias/feedback loop).
+    """
     if not ANTHROPIC_API_KEY:
         return [{"error": "ANTHROPIC_API_KEY not set"}]
     try:
+        # Only use rule-based categories as examples — NEVER manually edited ones
+        # This prevents the AI feedback loop where it just mirrors user edits
         examples = []
-        for t in app_state["categorized"][:50]:
+        for t in app_state["categorized"]:
+            if len(examples) >= 30:
+                break
             cat = t.get("predicted_category", "")
-            if cat and cat != "UNKNOWN":
+            if cat and cat != "UNKNOWN" and not t.get("manually_edited") and not t.get("ai_categorized"):
                 examples.append(f"  concept='{t.get('concept','')}' desc='{t.get('description','')}' amount={t.get('cargo',0) or t.get('abono',0)} → {cat}")
 
         categories_str = ", ".join(VALID_CATEGORIES[:-1])
@@ -171,7 +180,7 @@ def gemini_categorize(transactions):
         return [{"error": str(e)}]
 
 
-def gemini_anomalies():
+def ai_anomalies():
     """Use Claude Haiku to detect anomalies in financial data."""
     if not ANTHROPIC_API_KEY or not app_state["monthly_agg"]:
         return []
@@ -284,7 +293,7 @@ def run_pipeline(bank_path):
         print(f"[PIPELINE] AI categorizing {len(unknowns)} UNKNOWNs...", flush=True)
         if unknowns:
             try:
-                ai_results = gemini_categorize(unknowns)
+                ai_results = ai_categorize(unknowns)
                 for res in ai_results:
                     if "error" not in res and res.get("category") != "UNKNOWN":
                         idx = res["index"]
@@ -352,7 +361,13 @@ def _generate_reports(categorized):
         sales = None
         if app_state["has_sales"]:
             sales = parse_sales_report(cfg.SALES_REPORT_FILE)
-        pl_data = generate_pl_data(categorized, sales, cfg.USD_MXN_RATES)
+        # Pass HELPDESK data for accurate acquiring/writeoff figures
+        hd_for_pl = {}
+        if app_state.get("helpdesk_writeoffs"):
+            hd_for_pl["writeoffs"] = app_state["helpdesk_writeoffs"]
+        if app_state.get("helpdesk_mercadopago"):
+            hd_for_pl["mercadopago"] = app_state["helpdesk_mercadopago"]
+        pl_data = generate_pl_data(categorized, sales, cfg.USD_MXN_RATES, helpdesk_data=hd_for_pl)
         app_state["pl_data"] = pl_data
         pl_path = os.path.join(OUTPUT_DIR, "PL_факт.xlsx")
         write_pl_excel(pl_data, pl_path)
@@ -766,6 +781,8 @@ def api_recalculate():
 
     try:
         _generate_reports(app_state["categorized"])
+        app_state["generated_at"] = now_msk()
+        save_state()
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -782,7 +799,7 @@ def api_ai_categorize():
     if not unknowns:
         return jsonify({"message": "No UNKNOWN transactions", "results": []})
 
-    results = gemini_categorize(unknowns)
+    results = ai_categorize(unknowns)
 
     # Apply results
     applied = 0
@@ -808,7 +825,7 @@ def api_ai_suggest():
         return jsonify({"error": "Invalid index"}), 400
 
     txn = app_state["categorized"][idx]
-    results = gemini_categorize([txn])
+    results = ai_categorize([txn])
 
     if results and "error" not in results[0]:
         return jsonify(results[0])
@@ -818,7 +835,7 @@ def api_ai_suggest():
 @app.route("/api/ai/anomalies")
 def api_ai_anomalies():
     """Detect anomalies in financial data using Gemini."""
-    anomalies = gemini_anomalies()
+    anomalies = ai_anomalies()
     return jsonify({"anomalies": anomalies})
 
 

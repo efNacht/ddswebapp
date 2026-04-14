@@ -92,14 +92,36 @@ DDS_STRUCTURE = [
     (2, "расчетный счет", "closing_balance", None),
 ]
 
-# Month name → order mapping (for sorting)
-MONTH_ORDER = {
-    "Январь 2025": 1, "Февраль 2025": 2, "Март 2025": 3,
-    "Апрель 2025": 4, "Май 2025": 5, "Июнь 2025": 6,
-    "Июль 2025": 7, "Август 2025": 8, "Сентябрь 2025": 9,
-    "Октябрь 2025": 10, "Ноябрь 2025": 11, "Декабрь 2025": 12,
-    "Январь 2026": 13, "Февраль 2026": 14, "Март 2026": 15,
-}
+# Dynamic month ordering — works for any year range
+_MONTH_NAMES_RU = [
+    "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+    "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
+]
+_MONTH_NAME_TO_NUM = {name: i + 1 for i, name in enumerate(_MONTH_NAMES_RU)}
+
+
+def _month_sort_key(month_str):
+    """Sort key for 'Месяц YYYY' strings. Works for any year."""
+    parts = month_str.rsplit(" ", 1)
+    if len(parts) == 2:
+        name, year_str = parts
+        month_num = _MONTH_NAME_TO_NUM.get(name, 99)
+        try:
+            year = int(year_str)
+        except ValueError:
+            year = 9999
+        return year * 100 + month_num
+    return 999999  # unknown format goes last
+
+
+# Keep MONTH_ORDER for backward compat but generate dynamically
+def _build_month_order(month_names):
+    """Build MONTH_ORDER dict from a list of month names."""
+    sorted_names = sorted(month_names, key=_month_sort_key)
+    return {name: i for i, name in enumerate(sorted_names)}
+
+
+MONTH_ORDER = {}  # populated dynamically in aggregate_by_month
 
 
 def aggregate_by_month(categorized_transactions):
@@ -158,7 +180,7 @@ def generate_dds_data(categorized_transactions):
 
     dds_data = {}
 
-    sorted_months = sorted(monthly.keys(), key=lambda m: MONTH_ORDER.get(m, 99))
+    sorted_months = sorted(monthly.keys(), key=_month_sort_key)
 
     for month in sorted_months:
         cats = monthly[month]
@@ -216,7 +238,7 @@ def write_dds_excel(dds_data, output_path=None):
         bottom=Side(style='thin')
     )
 
-    sorted_months = sorted(dds_data.keys(), key=lambda m: MONTH_ORDER.get(m, 99))
+    sorted_months = sorted(dds_data.keys(), key=_month_sort_key)
 
     # Header row
     ws.cell(1, 1, "FL COSMETICS MEXICO — ДДС (факт)").font = header_font
@@ -316,7 +338,7 @@ def write_dds_excel(dds_data, output_path=None):
 
 def print_dds_summary(dds_data):
     """Print DDS summary to console."""
-    sorted_months = sorted(dds_data.keys(), key=lambda m: MONTH_ORDER.get(m, 99))
+    sorted_months = sorted(dds_data.keys(), key=_month_sort_key)
 
     print(f"\n{'Статья ДДС':<40s}", end="")
     for month in sorted_months:
