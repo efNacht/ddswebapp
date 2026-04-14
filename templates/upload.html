@@ -54,6 +54,27 @@
             </div>
         </details>
 
+        <details class="optional-files" style="margin-top:8px">
+            <summary>Данные партнёра — HELPDESK (возвраты, списания, MercadoPago)</summary>
+            <div class="optional-grid">
+                <label class="file-input-label">
+                    <span>Возвраты / Претензии</span>
+                    <input type="file" name="helpdesk_returns" accept=".xlsx,.xls" style="display:none">
+                    <span class="file-input-chosen" data-label="Возвраты">Не выбран</span>
+                </label>
+                <label class="file-input-label">
+                    <span>Списания товара</span>
+                    <input type="file" name="helpdesk_writeoffs" accept=".xlsx,.xls" style="display:none">
+                    <span class="file-input-chosen" data-label="Списания">Не выбран</span>
+                </label>
+                <label class="file-input-label">
+                    <span>MercadoPago детализация</span>
+                    <input type="file" name="helpdesk_mercadopago" accept=".xlsx,.xls" style="display:none">
+                    <span class="file-input-chosen" data-label="MercadoPago">Не выбран</span>
+                </label>
+            </div>
+        </details>
+
         <button type="submit" class="btn btn-primary btn-large" id="submitBtn">
             Сгенерировать отчёты
         </button>

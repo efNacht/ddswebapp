@@ -56,7 +56,31 @@
         <div class="table-scroll" id="categoryMatrix" style="max-height:520px"></div>
     </div>
 
-    <!-- Row 4: Top 5 transactions -->
+    <!-- Row 4: HELPDESK Partner Data -->
+    <div class="helpdesk-section hidden" id="helpdeskSection" style="margin-top:16px">
+        <div class="charts-grid">
+            <!-- Returns -->
+            <div class="chart-card" id="helpdeskReturnsCard" style="display:none">
+                <h3>Возвраты / Претензии</h3>
+                <div class="hd-kpi-row" id="hdReturnsKpi"></div>
+                <div class="table-scroll" id="hdReturnsTable"></div>
+            </div>
+            <!-- Write-offs -->
+            <div class="chart-card" id="helpdeskWriteoffsCard" style="display:none">
+                <h3>Списания товара</h3>
+                <div class="hd-kpi-row" id="hdWriteoffsKpi"></div>
+                <div class="table-scroll" id="hdWriteoffsTable"></div>
+            </div>
+        </div>
+        <!-- MercadoPago (full width) -->
+        <div class="chart-card" id="helpdeskMPCard" style="display:none;margin-top:16px">
+            <h3>MercadoPago — детализация по месяцам</h3>
+            <div class="hd-kpi-row" id="hdMPKpi"></div>
+            <div class="table-scroll" id="hdMPTable"></div>
+        </div>
+    </div>
+
+    <!-- Row 5: Top 5 transactions -->
     <div class="chart-card" style="margin-top:16px">
         <h3>Топ-5 крупнейших расходов</h3>
         <div id="topTxnList"></div>
@@ -207,6 +231,9 @@ async function loadDashboard() {
 
     // Load matrix async
     loadMatrix(d);
+
+    // Render HELPDESK data if available
+    if (data.helpdesk) renderHelpdesk(data.helpdesk);
 }
 
 async function loadMatrix(d) {
@@ -326,6 +353,80 @@ function renderMatrix(filterMonth) {
     html += '<p style="font-size:11px;color:var(--text-dim);margin-top:6px">↑ нажмите строку — перейти к транзакциям</p>';
 
     document.getElementById('categoryMatrix').innerHTML = html;
+}
+
+function renderHelpdesk(hd) {
+    document.getElementById('helpdeskSection').classList.remove('hidden');
+
+    // --- Returns ---
+    if (hd.returns) {
+        const card = document.getElementById('helpdeskReturnsCard');
+        card.style.display = '';
+        const r = hd.returns;
+        document.getElementById('hdReturnsKpi').innerHTML = `
+            <div class="hd-kpi"><span class="hd-kpi-val">${r.total_records}</span><span class="hd-kpi-label">записей</span></div>
+            <div class="hd-kpi"><span class="hd-kpi-val">${formatMXN(r.total_amount)}</span><span class="hd-kpi-label">сумма возвратов</span></div>
+            <div class="hd-kpi"><span class="hd-kpi-val">${r.total_quantity}</span><span class="hd-kpi-label">единиц</span></div>
+        `;
+        const months = Object.keys(r.by_month).sort();
+        let html = '<table class="data-table compact"><thead><tr><th>Месяц</th><th class="num">Записей</th><th class="num">Сумма</th></tr></thead><tbody>';
+        let tA = 0, tC = 0;
+        for (const m of months) {
+            const d = r.by_month[m];
+            tA += d.amount; tC += d.count;
+            html += `<tr><td>${m}</td><td class="num">${d.count}</td><td class="num">${formatMXN(d.amount)}</td></tr>`;
+        }
+        html += `<tr style="font-weight:700;border-top:2px solid var(--border)"><td>ИТОГО</td><td class="num">${tC}</td><td class="num">${formatMXN(tA)}</td></tr>`;
+        html += '</tbody></table>';
+        document.getElementById('hdReturnsTable').innerHTML = html;
+    }
+
+    // --- Write-offs ---
+    if (hd.writeoffs) {
+        const card = document.getElementById('helpdeskWriteoffsCard');
+        card.style.display = '';
+        const w = hd.writeoffs;
+        document.getElementById('hdWriteoffsKpi').innerHTML = `
+            <div class="hd-kpi"><span class="hd-kpi-val">${w.total_records}</span><span class="hd-kpi-label">записей</span></div>
+            <div class="hd-kpi"><span class="hd-kpi-val">${formatMXN(w.total_cost)}</span><span class="hd-kpi-label">себестоимость</span></div>
+            <div class="hd-kpi"><span class="hd-kpi-val">${w.total_quantity}</span><span class="hd-kpi-label">единиц</span></div>
+        `;
+        // By category
+        const cats = Object.entries(w.by_category).sort((a,b) => b[1].cost - a[1].cost);
+        let html = '<table class="data-table compact"><thead><tr><th>Статья</th><th class="num">Записей</th><th class="num">С/с (MXN)</th></tr></thead><tbody>';
+        for (const [cat, d] of cats) {
+            html += `<tr><td>${cat}</td><td class="num">${d.count}</td><td class="num">${formatMXN(d.cost)}</td></tr>`;
+        }
+        html += `<tr style="font-weight:700;border-top:2px solid var(--border)"><td>ИТОГО</td><td class="num">${w.total_records}</td><td class="num">${formatMXN(w.total_cost)}</td></tr>`;
+        html += '</tbody></table>';
+        document.getElementById('hdWriteoffsTable').innerHTML = html;
+    }
+
+    // --- MercadoPago ---
+    if (hd.mercadopago) {
+        const card = document.getElementById('helpdeskMPCard');
+        card.style.display = '';
+        const mp = hd.mercadopago;
+        document.getElementById('hdMPKpi').innerHTML = `
+            <div class="hd-kpi"><span class="hd-kpi-val">${formatMXN(mp.total_revenue)}</span><span class="hd-kpi-label">выручка gross</span></div>
+            <div class="hd-kpi"><span class="hd-kpi-val negative">${formatMXN(mp.total_commission)}</span><span class="hd-kpi-label">комиссия (${mp.commission_rate}%)</span></div>
+            <div class="hd-kpi"><span class="hd-kpi-val positive">${formatMXN(mp.total_net)}</span><span class="hd-kpi-label">нетто</span></div>
+            <div class="hd-kpi"><span class="hd-kpi-val">${mp.total_records}</span><span class="hd-kpi-label">заказов</span></div>
+        `;
+        const months = Object.keys(mp.by_month).sort();
+        let html = '<table class="data-table compact"><thead><tr><th>Месяц</th><th class="num">Заказов</th><th class="num">Gross</th><th class="num">Комиссия</th><th class="num">Нетто</th></tr></thead><tbody>';
+        let tR=0, tCom=0, tN=0, tCnt=0;
+        for (const m of months) {
+            const d = mp.by_month[m];
+            tR+=d.revenue; tCom+=d.commission; tN+=d.net; tCnt+=d.count;
+            html += `<tr><td>${m}</td><td class="num">${d.count}</td><td class="num">${formatMXN(d.revenue)}</td>`;
+            html += `<td class="num negative">${formatMXN(d.commission)}</td><td class="num positive">${formatMXN(d.net)}</td></tr>`;
+        }
+        html += `<tr style="font-weight:700;border-top:2px solid var(--border)"><td>ИТОГО</td><td class="num">${tCnt}</td><td class="num">${formatMXN(tR)}</td>`;
+        html += `<td class="num negative">${formatMXN(tCom)}</td><td class="num positive">${formatMXN(tN)}</td></tr>`;
+        html += '</tbody></table>';
+        document.getElementById('hdMPTable').innerHTML = html;
+    }
 }
 
 async function loadAnomalies() {

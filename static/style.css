@@ -300,6 +300,14 @@ a { color: var(--primary); text-decoration: none; }
 /* ── Loading ────────────────────────────────────────────── */
 .loading { text-align: center; padding: 24px; color: var(--text-dim); font-size: 14px; }
 
+/* ── HELPDESK KPI ───────────────────────────────────────── */
+.hd-kpi-row { display: flex; gap: 16px; margin-bottom: 14px; flex-wrap: wrap; }
+.hd-kpi { display: flex; flex-direction: column; padding: 10px 16px; background: var(--surface2); border-radius: 8px; min-width: 100px; }
+.hd-kpi-val { font-size: 18px; font-weight: 700; color: var(--text); }
+.hd-kpi-val.positive { color: var(--income); }
+.hd-kpi-val.negative { color: var(--expense); }
+.hd-kpi-label { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+
 /* ── Responsive ─────────────────────────────────────────── */
 @media (max-width: 768px) {
     .kpi-grid { grid-template-columns: repeat(2, 1fr); }

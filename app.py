@@ -49,6 +49,10 @@ app_state = {
     "has_sales": False,
     "has_dds_template": False,
     "has_pl_template": False,
+    "has_helpdesk": False,
+    "helpdesk_returns": None,
+    "helpdesk_writeoffs": None,
+    "helpdesk_mercadopago": None,
     "processing": False,
     "generated_at": None,
     "source_filename": None,
@@ -394,6 +398,44 @@ def _generate_reports(categorized):
     write_tax_excel(tax_data, tax_path)
     print(f"[REPORTS] Tax written: {os.path.exists(tax_path)}", flush=True)
 
+    # HELPDESK data (returns, write-offs, MercadoPago)
+    print("[REPORTS] Processing HELPDESK data...", flush=True)
+    try:
+        from helpdesk_parser import (
+            parse_returns, parse_writeoffs, parse_mercadopago,
+            write_helpdesk_report
+        )
+        hd_returns_path = os.path.join(UPLOAD_DIR, "helpdesk_returns.xlsx")
+        hd_writeoffs_path = os.path.join(UPLOAD_DIR, "helpdesk_writeoffs.xlsx")
+        hd_mp_path = os.path.join(UPLOAD_DIR, "helpdesk_mercadopago.xlsx")
+
+        r_sum = w_sum = m_sum = None
+
+        if os.path.exists(hd_returns_path):
+            _, r_sum = parse_returns(hd_returns_path)
+            app_state["helpdesk_returns"] = r_sum
+            print(f"[REPORTS] HELPDESK returns: {r_sum['total_records']} records, {r_sum['total_amount']:,.0f} MXN", flush=True)
+
+        if os.path.exists(hd_writeoffs_path):
+            _, w_sum = parse_writeoffs(hd_writeoffs_path)
+            app_state["helpdesk_writeoffs"] = w_sum
+            print(f"[REPORTS] HELPDESK write-offs: {w_sum['total_records']} records, {w_sum['total_cost']:,.0f} MXN", flush=True)
+
+        if os.path.exists(hd_mp_path):
+            _, m_sum = parse_mercadopago(hd_mp_path)
+            app_state["helpdesk_mercadopago"] = m_sum
+            print(f"[REPORTS] HELPDESK MercadoPago: {m_sum['total_records']} records, {m_sum['total_revenue']:,.0f} MXN", flush=True)
+
+        if r_sum or w_sum or m_sum:
+            app_state["has_helpdesk"] = True
+            hd_path = os.path.join(OUTPUT_DIR, "Данные_партнёра.xlsx")
+            write_helpdesk_report(r_sum, w_sum, m_sum, hd_path)
+            print(f"[REPORTS] HELPDESK report written: {os.path.exists(hd_path)}", flush=True)
+
+    except Exception as e:
+        print(f"[REPORTS] HELPDESK processing error: {e}", flush=True)
+        traceback.print_exc()
+
 
 # ─────────────────────────────────────────────────
 # ROUTES — Pages
@@ -450,7 +492,10 @@ def api_upload():
     for key, name in [("sales_report", "sales_report.xlsx"),
                        ("payments", "payments.xlsx"),
                        ("dds_template", "dds_template.xlsx"),
-                       ("pl_template", "pl_template.xlsx")]:
+                       ("pl_template", "pl_template.xlsx"),
+                       ("helpdesk_returns", "helpdesk_returns.xlsx"),
+                       ("helpdesk_writeoffs", "helpdesk_writeoffs.xlsx"),
+                       ("helpdesk_mercadopago", "helpdesk_mercadopago.xlsx")]:
         if key in request.files and request.files[key].filename:
             request.files[key].save(os.path.join(UPLOAD_DIR, name))
 
@@ -569,6 +614,47 @@ def api_dashboard():
                 ), 2),
             })
 
+    # HELPDESK summary for dashboard
+    helpdesk = None
+    if app_state.get("has_helpdesk"):
+        helpdesk = {}
+        if app_state.get("helpdesk_returns"):
+            rs = app_state["helpdesk_returns"]
+            helpdesk["returns"] = {
+                "total_records": rs["total_records"],
+                "total_amount": round(rs["total_amount"], 2),
+                "total_quantity": rs["total_quantity"],
+                "by_month": {m: {"count": d["count"], "amount": round(d["amount"], 2)}
+                             for m, d in rs.get("by_month", {}).items()},
+            }
+        if app_state.get("helpdesk_writeoffs"):
+            ws = app_state["helpdesk_writeoffs"]
+            helpdesk["writeoffs"] = {
+                "total_records": ws["total_records"],
+                "total_cost": round(ws["total_cost"], 2),
+                "total_quantity": ws["total_quantity"],
+                "by_category": {c: {"count": d["count"], "cost": round(d["cost"], 2)}
+                                for c, d in ws.get("by_category", {}).items()},
+                "by_month": {m: {"count": d["count"], "cost": round(d["cost"], 2)}
+                             for m, d in ws.get("by_month", {}).items()},
+            }
+        if app_state.get("helpdesk_mercadopago"):
+            ms = app_state["helpdesk_mercadopago"]
+            helpdesk["mercadopago"] = {
+                "total_records": ms["total_records"],
+                "total_revenue": round(ms["total_revenue"], 2),
+                "total_commission": round(ms["total_commission"], 2),
+                "total_cancellations": round(ms["total_cancellations"], 2),
+                "total_net": round(ms["total_net_revenue"], 2),
+                "commission_rate": round(ms["commission_rate"], 1),
+                "by_month": {m: {
+                    "revenue": round(d["revenue"], 2),
+                    "commission": round(d["commission"], 2),
+                    "net": round(d["net"], 2),
+                    "count": d["count"],
+                } for m, d in ms.get("by_month", {}).items()},
+            }
+
     return jsonify({
         "kpis": {
             "total_income": round(total_income, 2),
@@ -580,6 +666,7 @@ def api_dashboard():
         "monthly": months_data,
         "category_breakdown": [{"category": c, "amount": round(a, 2)} for c, a in cat_breakdown[:15]],
         "plan_fact": plan_fact,
+        "helpdesk": helpdesk,
     })
 
 
@@ -748,6 +835,7 @@ def api_download_report(report_type):
         "pl-template": "PL_план_факт.xlsx",
         "reconciliation": "Сверка_провайдеров.xlsx",
         "tax": "Налоговая_сводка.xlsx",
+        "helpdesk": "Данные_партнёра.xlsx",
     }
 
     filename = report_files.get(report_type)
@@ -772,6 +860,7 @@ def api_reports_list():
         ("pl-template", "PL_план_факт.xlsx", "P&L — шаблон компании (план/факт)"),
         ("reconciliation", "Сверка_провайдеров.xlsx", "Сверка платёжных систем"),
         ("tax", "Налоговая_сводка.xlsx", "Налоговый отчёт"),
+        ("helpdesk", "Данные_партнёра.xlsx", "Данные партнёра (возвраты, списания, MercadoPago)"),
     ]
 
     for key, filename, title in report_info:
@@ -879,7 +968,7 @@ def api_debug():
 
     src_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "src")
     modules_to_check = ["parser", "categorizer", "dds_generator", "pl_generator",
-                        "reconciliation", "tax_summary", "template_filler"]
+                        "reconciliation", "tax_summary", "template_filler", "helpdesk_parser"]
 
     module_status = {}
     for mod in modules_to_check:
@@ -895,7 +984,7 @@ def api_debug():
     return jsonify({
         "status": "running",
         "python_version": sys.version,
-        "gemini_key_set": bool(GEMINI_API_KEY),
+        "anthropic_key_set": bool(ANTHROPIC_API_KEY),
         "src_dir_exists": os.path.exists(src_dir),
         "src_dir": src_dir,
         "sys_path": sys.path[:5],
@@ -932,6 +1021,10 @@ def api_reset():
         "has_sales": False,
         "has_dds_template": False,
         "has_pl_template": False,
+        "has_helpdesk": False,
+        "helpdesk_returns": None,
+        "helpdesk_writeoffs": None,
+        "helpdesk_mercadopago": None,
         "processing": False,
         "generated_at": None,
         "source_filename": None,
