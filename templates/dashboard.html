@@ -5,8 +5,10 @@
     <div class="page-header">
         <h1>Dashboard</h1>
         <div class="header-actions">
-            <button class="btn btn-secondary" onclick="loadAnomalies()">AI: Найти аномалии</button>
-            <button class="btn btn-danger" onclick="resetData()">Сбросить данные</button>
+            <button class="btn btn-secondary" onclick="loadAnomalies()">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                AI: Найти аномалии
+            </button>
         </div>
     </div>
 
@@ -25,29 +27,32 @@
     </div>
 
     <!-- Row 1: Monthly bar chart (full width) -->
-    <div class="chart-card" style="margin-top:16px">
+    <div class="chart-card dash-row">
         <h3>Доходы и расходы по месяцам</h3>
-        <canvas id="monthlyChart" style="max-height:260px"></canvas>
+        <canvas id="monthlyChart" style="max-height:240px"></canvas>
     </div>
 
-    <!-- Row 2: Category donut + monthly table -->
-    <div class="charts-grid" style="margin-top:16px">
+    <!-- Row 2: Category donut + top 5 -->
+    <div class="charts-grid dash-row">
         <div class="chart-card">
-            <h3>Расходы по категориям <span style="font-size:12px;font-weight:400;color:var(--text-dim)">— нажмите сегмент для фильтра</span></h3>
+            <div class="chart-card-header">
+                <h3>Расходы по категориям</h3>
+                <span class="chart-card-hint">Нажмите сегмент для фильтра</span>
+            </div>
             <canvas id="categoryChart"></canvas>
         </div>
         <div class="chart-card">
-            <h3>Итоги по месяцам</h3>
-            <div class="table-scroll" id="monthlyBreakdown"></div>
+            <h3>Топ-5 крупнейших расходов</h3>
+            <div id="topTxnList"></div>
         </div>
     </div>
 
-    <!-- Row 3: Category × Month matrix (full width, main breakdown) -->
-    <div class="chart-card" style="margin-top:16px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
-            <h3 style="margin:0">Расходы по категориям и месяцам</h3>
-            <div style="display:flex;align-items:center;gap:8px">
-                <span style="font-size:12px;color:var(--text-dim)">Фильтр:</span>
+    <!-- Row 3: Category x Month matrix (full width) -->
+    <div class="chart-card dash-row-lg">
+        <div class="chart-card-header">
+            <h3>Расходы по категориям и месяцам</h3>
+            <div class="matrix-filter">
+                <span class="matrix-filter-label">Фильтр:</span>
                 <select id="matrixMonthFilter" class="filter-select" onchange="filterMatrix()">
                     <option value="">Все месяцы</option>
                 </select>
@@ -57,33 +62,24 @@
     </div>
 
     <!-- Row 4: HELPDESK Partner Data -->
-    <div class="helpdesk-section hidden" id="helpdeskSection" style="margin-top:16px">
-        <div class="charts-grid">
-            <!-- Returns -->
+    <div class="helpdesk-section hidden" id="helpdeskSection">
+        <div class="charts-grid dash-row-lg">
             <div class="chart-card" id="helpdeskReturnsCard" style="display:none">
                 <h3>Возвраты / Претензии</h3>
                 <div class="hd-kpi-row" id="hdReturnsKpi"></div>
                 <div class="table-scroll" id="hdReturnsTable"></div>
             </div>
-            <!-- Write-offs -->
             <div class="chart-card" id="helpdeskWriteoffsCard" style="display:none">
                 <h3>Списания товара</h3>
                 <div class="hd-kpi-row" id="hdWriteoffsKpi"></div>
                 <div class="table-scroll" id="hdWriteoffsTable"></div>
             </div>
         </div>
-        <!-- MercadoPago (full width) -->
-        <div class="chart-card" id="helpdeskMPCard" style="display:none;margin-top:16px">
+        <div class="chart-card dash-row" id="helpdeskMPCard" style="display:none">
             <h3>MercadoPago — детализация по месяцам</h3>
             <div class="hd-kpi-row" id="hdMPKpi"></div>
             <div class="table-scroll" id="hdMPTable"></div>
         </div>
-    </div>
-
-    <!-- Row 5: Top 5 transactions -->
-    <div class="chart-card" style="margin-top:16px">
-        <h3>Топ-5 крупнейших расходов</h3>
-        <div id="topTxnList"></div>
     </div>
 </div>
 {% endblock %}
@@ -92,16 +88,16 @@
 <script>
 let charts = {};
 let matrixData = null;
-const PALETTE = ['#4f6ef7','#10b981','#f59e0b','#f43f5e','#8b5cf6','#06b6d4','#ec4899','#84cc16','#f97316','#6366f1'];
+const PALETTE = ['#4f46e5','#059669','#d97706','#dc2626','#7c3aed','#0891b2','#db2777','#65a30d','#ea580c','#4f46e5'];
 
 function chartDefaults() {
     const dark = document.body.classList.contains('dark');
     return {
-        gridColor: dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)',
-        textColor: dark ? '#8b8fa3' : '#64748b',
-        tooltipBg: dark ? '#1a1d27' : '#fff',
-        tooltipBorder: dark ? '#2e3144' : '#e2e8f0',
-        tooltipText: dark ? '#e4e6eb' : '#1e293b',
+        gridColor: dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
+        textColor: dark ? '#9ca3af' : '#6b7280',
+        tooltipBg: dark ? '#161822' : '#fff',
+        tooltipBorder: dark ? '#2a2d3e' : '#e5e7eb',
+        tooltipText: dark ? '#e5e7eb' : '#111827',
     };
 }
 
@@ -113,7 +109,7 @@ function formatMXN(n) {
 function sharedTooltip(d) {
     return {
         backgroundColor: d.tooltipBg, borderColor: d.tooltipBorder, borderWidth: 1,
-        titleColor: d.tooltipText, bodyColor: d.tooltipText, padding: 10, cornerRadius: 8,
+        titleColor: d.tooltipText, bodyColor: d.tooltipText, padding: 10, cornerRadius: 6,
         callbacks: { label: ctx => '  ' + formatMXN(ctx.parsed.y ?? ctx.parsed.x ?? ctx.parsed) }
     };
 }
@@ -134,7 +130,7 @@ async function loadDashboard() {
     const d = chartDefaults();
     const months = data.monthly.map(m => m.month.replace(' 2025','').replace(' 2026',' \'26'));
 
-    // Monthly bar + line chart (income bars, expense bars, net line)
+    // Monthly bar + line chart
     if (charts.monthly) charts.monthly.destroy();
     charts.monthly = new Chart(document.getElementById('monthlyChart'), {
         type: 'bar',
@@ -143,27 +139,27 @@ async function loadDashboard() {
             datasets: [
                 {
                     label: 'Доход', data: data.monthly.map(m => m.income),
-                    backgroundColor: 'rgba(16,185,129,0.7)', borderColor: '#10b981',
-                    borderWidth: 1.5, borderRadius: 4, borderSkipped: false, order: 2,
+                    backgroundColor: 'rgba(5,150,105,0.65)', borderColor: '#059669',
+                    borderWidth: 1, borderRadius: 3, borderSkipped: false, order: 2,
                 },
                 {
                     label: 'Расход', data: data.monthly.map(m => m.expense),
-                    backgroundColor: 'rgba(244,63,94,0.7)', borderColor: '#f43f5e',
-                    borderWidth: 1.5, borderRadius: 4, borderSkipped: false, order: 2,
+                    backgroundColor: 'rgba(220,38,38,0.65)', borderColor: '#dc2626',
+                    borderWidth: 1, borderRadius: 3, borderSkipped: false, order: 2,
                 },
                 {
                     label: 'Чистый поток', data: data.monthly.map(m => m.net),
-                    type: 'line', borderColor: '#4f6ef7', backgroundColor: 'transparent',
-                    borderWidth: 2.5, tension: 0.3, pointRadius: 4,
-                    pointBackgroundColor: '#4f6ef7', pointBorderColor: '#fff', pointBorderWidth: 2,
-                    pointHoverRadius: 6, order: 1,
+                    type: 'line', borderColor: '#4f46e5', backgroundColor: 'transparent',
+                    borderWidth: 2, tension: 0.3, pointRadius: 3,
+                    pointBackgroundColor: '#4f46e5', pointBorderColor: '#fff', pointBorderWidth: 1.5,
+                    pointHoverRadius: 5, order: 1,
                 }
             ]
         },
         options: {
-            responsive: true, animation: { duration: 600 },
+            responsive: true, animation: { duration: 500 },
             plugins: {
-                legend: { labels: { color: d.textColor, font: { size: 12 } } },
+                legend: { labels: { color: d.textColor, font: { size: 11 }, boxWidth: 10, padding: 14 } },
                 tooltip: {
                     ...sharedTooltip(d),
                     callbacks: { label: ctx => `  ${ctx.dataset.label}: ${formatMXN(ctx.parsed.y)}` }
@@ -183,15 +179,15 @@ async function loadDashboard() {
         type: 'doughnut',
         data: {
             labels: topCats.map(c => c.category),
-            datasets: [{ data: topCats.map(c => c.amount), backgroundColor: PALETTE, borderWidth: 2, hoverOffset: 8 }]
+            datasets: [{ data: topCats.map(c => c.amount), backgroundColor: PALETTE, borderWidth: 2, hoverOffset: 6 }]
         },
         options: {
-            responsive: true, animation: { duration: 700 },
+            responsive: true, animation: { duration: 500 },
             plugins: {
-                legend: { position: 'right', labels: { color: d.textColor, font: { size: 11 }, padding: 10, boxWidth: 12 } },
+                legend: { position: 'right', labels: { color: d.textColor, font: { size: 11 }, padding: 8, boxWidth: 10 } },
                 tooltip: {
                     backgroundColor: d.tooltipBg, borderColor: d.tooltipBorder, borderWidth: 1,
-                    titleColor: d.tooltipText, bodyColor: d.tooltipText, padding: 10, cornerRadius: 8,
+                    titleColor: d.tooltipText, bodyColor: d.tooltipText, padding: 10, cornerRadius: 6,
                     callbacks: {
                         label: ctx => '  ' + formatMXN(ctx.parsed) +
                             '  (' + (ctx.parsed / topCats.reduce((s,c)=>s+c.amount,0) * 100).toFixed(1) + '%)'
@@ -205,29 +201,6 @@ async function loadDashboard() {
             onHover: (evt, els) => { evt.native.target.style.cursor = els.length ? 'pointer' : 'default'; }
         }
     });
-
-    // Monthly summary table
-    const monthly = data.monthly || [];
-    let mHtml = '<table class="data-table compact"><thead><tr><th>Месяц</th><th class="num">Доход</th><th class="num">Расход</th><th class="num">Поток</th></tr></thead><tbody>';
-    let tI=0, tE=0, tN=0;
-    for (const m of monthly) {
-        tI+=m.income; tE+=m.expense; tN+=m.net;
-        const netCls = m.net>=0 ? 'positive' : 'negative';
-        mHtml += `<tr style="cursor:pointer" onclick="filterMatrixByMonth('${m.month}')">
-            <td style="white-space:nowrap">${m.month}</td>
-            <td class="num positive">${formatMXN(m.income)}</td>
-            <td class="num negative">${formatMXN(m.expense)}</td>
-            <td class="num ${netCls}">${formatMXN(m.net)}</td>
-        </tr>`;
-    }
-    mHtml += `<tr style="font-weight:700;border-top:2px solid var(--border)">
-        <td>ИТОГО</td>
-        <td class="num positive">${formatMXN(tI)}</td>
-        <td class="num negative">${formatMXN(tE)}</td>
-        <td class="num ${tN>=0?'positive':'negative'}">${formatMXN(tN)}</td>
-    </tr></tbody></table>`;
-    mHtml += '<p style="font-size:11px;color:var(--text-dim);margin-top:6px">↑ нажмите строку — фильтр матрицы</p>';
-    document.getElementById('monthlyBreakdown').innerHTML = mHtml;
 
     // Load matrix async
     loadMatrix(d);
@@ -256,16 +229,14 @@ async function loadMatrix(d) {
     // Top 5 transactions
     const txns = matrixData.top_transactions || [];
     document.getElementById('topTxnList').innerHTML = txns.map((t, i) => `
-        <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)">
-            <span style="font-size:18px;font-weight:800;color:var(--border);min-width:24px">${i+1}</span>
-            <div style="flex:1;min-width:0">
-                <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.description || t.concept}</div>
-                <div style="font-size:11px;color:var(--text-dim)">${t.category} · ${t.month}</div>
+        <div class="top-txn">
+            <span class="top-txn-rank">${i+1}</span>
+            <div class="top-txn-info">
+                <div class="top-txn-desc">${t.description || t.concept}</div>
+                <div class="top-txn-meta">${t.category} · ${t.month}</div>
             </div>
             <a href="/transactions?category=${encodeURIComponent(t.category)}&month=${encodeURIComponent(t.month)}"
-               style="font-size:14px;font-weight:700;color:var(--expense);white-space:nowrap;text-decoration:none">
-                ${formatMXN(t.amount)}
-            </a>
+               class="top-txn-amount">${formatMXN(t.amount)}</a>
         </div>
     `).join('');
 }
@@ -290,30 +261,23 @@ function renderMatrix(filterMonth) {
     const months = filterMonth ? [filterMonth] : allMonths;
     const shortMonths = months.map(m => m.replace(' 2025','').replace(' 2026',' \'26'));
 
-    // When filtering: show % of month total
     const showPct = !!filterMonth;
 
     let html = '<table class="data-table compact matrix-table"><thead><tr>';
-    html += '<th style="min-width:160px;position:sticky;left:0;background:var(--surface2)">Категория</th>';
+    html += '<th style="min-width:150px;position:sticky;left:0;background:var(--surface2)">Категория</th>';
     shortMonths.forEach(m => { html += `<th class="num">${m}</th>`; });
-    if (!filterMonth) html += '<th class="num" style="position:sticky;right:0;background:var(--surface2)">ИТОГО</th>';
-    if (showPct) html += '<th class="num">% месяца</th>';
+    if (!filterMonth) html += '<th class="num" style="position:sticky;right:0;background:var(--surface2)">Итого</th>';
+    if (showPct) html += '<th class="num">%</th>';
     html += '</tr></thead><tbody>';
 
     const monthTotal = filterMonth ? (matrixData.month_totals[filterMonth] || 0) : 0;
 
-    // Sort cats by amount in selected month (or by total)
     let sortedCats = [...cats];
     if (filterMonth) {
         sortedCats.sort((a, b) => (matrix[b]?.[filterMonth] || 0) - (matrix[a]?.[filterMonth] || 0));
     }
 
-    const maxVal = filterMonth
-        ? Math.max(...sortedCats.map(c => matrix[c]?.[filterMonth] || 0))
-        : Math.max(...cats.map(c => matrixData.cat_totals[c] || 0));
-
     for (const cat of sortedCats) {
-        // Skip rows with zero in the selected month
         if (filterMonth && !(matrix[cat]?.[filterMonth] > 0)) continue;
 
         const total = matrixData.cat_totals[cat] || 0;
@@ -323,8 +287,8 @@ function renderMatrix(filterMonth) {
         for (const month of months) {
             const val = matrix[cat]?.[month] || 0;
             const ref = filterMonth ? monthTotal : (matrixData.month_totals[month] || 1);
-            const opacity = val > 0 ? (0.08 + 0.55 * (val / ref)) : 0;
-            const bg = val > 0 ? `background:rgba(244,63,94,${opacity.toFixed(2)})` : '';
+            const opacity = val > 0 ? (0.06 + 0.45 * (val / ref)) : 0;
+            const bg = val > 0 ? `background:rgba(220,38,38,${opacity.toFixed(2)})` : '';
             html += `<td class="num" style="${bg}">${val > 0 ? formatMXN(val) : '—'}</td>`;
         }
 
@@ -340,7 +304,7 @@ function renderMatrix(filterMonth) {
 
     // Totals row
     html += `<tr style="font-weight:700;border-top:2px solid var(--border)">`;
-    html += `<td style="position:sticky;left:0;background:var(--surface2)">ИТОГО расходы</td>`;
+    html += `<td style="position:sticky;left:0;background:var(--surface2)">Итого расходы</td>`;
     for (const month of months) {
         html += `<td class="num negative">${formatMXN(matrixData.month_totals[month] || 0)}</td>`;
     }
@@ -350,7 +314,7 @@ function renderMatrix(filterMonth) {
     }
     if (showPct) html += '<td class="num">100%</td>';
     html += '</tr></tbody></table>';
-    html += '<p style="font-size:11px;color:var(--text-dim);margin-top:6px">↑ нажмите строку — перейти к транзакциям</p>';
+    html += '<p class="chart-card-hint" style="margin-top:6px">Нажмите строку — перейти к транзакциям</p>';
 
     document.getElementById('categoryMatrix').innerHTML = html;
 }
@@ -358,15 +322,13 @@ function renderMatrix(filterMonth) {
 function renderHelpdesk(hd) {
     document.getElementById('helpdeskSection').classList.remove('hidden');
 
-    // --- Returns ---
     if (hd.returns) {
-        const card = document.getElementById('helpdeskReturnsCard');
-        card.style.display = '';
+        document.getElementById('helpdeskReturnsCard').style.display = '';
         const r = hd.returns;
         document.getElementById('hdReturnsKpi').innerHTML = `
-            <div class="hd-kpi"><span class="hd-kpi-val">${r.total_records}</span><span class="hd-kpi-label">записей</span></div>
-            <div class="hd-kpi"><span class="hd-kpi-val">${formatMXN(r.total_amount)}</span><span class="hd-kpi-label">сумма возвратов</span></div>
-            <div class="hd-kpi"><span class="hd-kpi-val">${r.total_quantity}</span><span class="hd-kpi-label">единиц</span></div>
+            <div class="hd-kpi"><span class="hd-kpi-val">${r.total_records}</span><span class="hd-kpi-label">Записей</span></div>
+            <div class="hd-kpi"><span class="hd-kpi-val">${formatMXN(r.total_amount)}</span><span class="hd-kpi-label">Сумма возвратов</span></div>
+            <div class="hd-kpi"><span class="hd-kpi-val">${r.total_quantity}</span><span class="hd-kpi-label">Единиц</span></div>
         `;
         const months = Object.keys(r.by_month).sort();
         let html = '<table class="data-table compact"><thead><tr><th>Месяц</th><th class="num">Записей</th><th class="num">Сумма</th></tr></thead><tbody>';
@@ -376,42 +338,37 @@ function renderHelpdesk(hd) {
             tA += d.amount; tC += d.count;
             html += `<tr><td>${m}</td><td class="num">${d.count}</td><td class="num">${formatMXN(d.amount)}</td></tr>`;
         }
-        html += `<tr style="font-weight:700;border-top:2px solid var(--border)"><td>ИТОГО</td><td class="num">${tC}</td><td class="num">${formatMXN(tA)}</td></tr>`;
+        html += `<tr style="font-weight:700;border-top:2px solid var(--border)"><td>Итого</td><td class="num">${tC}</td><td class="num">${formatMXN(tA)}</td></tr>`;
         html += '</tbody></table>';
         document.getElementById('hdReturnsTable').innerHTML = html;
     }
 
-    // --- Write-offs ---
     if (hd.writeoffs) {
-        const card = document.getElementById('helpdeskWriteoffsCard');
-        card.style.display = '';
+        document.getElementById('helpdeskWriteoffsCard').style.display = '';
         const w = hd.writeoffs;
         document.getElementById('hdWriteoffsKpi').innerHTML = `
-            <div class="hd-kpi"><span class="hd-kpi-val">${w.total_records}</span><span class="hd-kpi-label">записей</span></div>
-            <div class="hd-kpi"><span class="hd-kpi-val">${formatMXN(w.total_cost)}</span><span class="hd-kpi-label">себестоимость</span></div>
-            <div class="hd-kpi"><span class="hd-kpi-val">${w.total_quantity}</span><span class="hd-kpi-label">единиц</span></div>
+            <div class="hd-kpi"><span class="hd-kpi-val">${w.total_records}</span><span class="hd-kpi-label">Записей</span></div>
+            <div class="hd-kpi"><span class="hd-kpi-val">${formatMXN(w.total_cost)}</span><span class="hd-kpi-label">Себестоимость</span></div>
+            <div class="hd-kpi"><span class="hd-kpi-val">${w.total_quantity}</span><span class="hd-kpi-label">Единиц</span></div>
         `;
-        // By category
         const cats = Object.entries(w.by_category).sort((a,b) => b[1].cost - a[1].cost);
         let html = '<table class="data-table compact"><thead><tr><th>Статья</th><th class="num">Записей</th><th class="num">С/с (MXN)</th></tr></thead><tbody>';
         for (const [cat, d] of cats) {
             html += `<tr><td>${cat}</td><td class="num">${d.count}</td><td class="num">${formatMXN(d.cost)}</td></tr>`;
         }
-        html += `<tr style="font-weight:700;border-top:2px solid var(--border)"><td>ИТОГО</td><td class="num">${w.total_records}</td><td class="num">${formatMXN(w.total_cost)}</td></tr>`;
+        html += `<tr style="font-weight:700;border-top:2px solid var(--border)"><td>Итого</td><td class="num">${w.total_records}</td><td class="num">${formatMXN(w.total_cost)}</td></tr>`;
         html += '</tbody></table>';
         document.getElementById('hdWriteoffsTable').innerHTML = html;
     }
 
-    // --- MercadoPago ---
     if (hd.mercadopago) {
-        const card = document.getElementById('helpdeskMPCard');
-        card.style.display = '';
+        document.getElementById('helpdeskMPCard').style.display = '';
         const mp = hd.mercadopago;
         document.getElementById('hdMPKpi').innerHTML = `
-            <div class="hd-kpi"><span class="hd-kpi-val">${formatMXN(mp.total_revenue)}</span><span class="hd-kpi-label">выручка gross</span></div>
-            <div class="hd-kpi"><span class="hd-kpi-val negative">${formatMXN(mp.total_commission)}</span><span class="hd-kpi-label">комиссия (${mp.commission_rate}%)</span></div>
-            <div class="hd-kpi"><span class="hd-kpi-val positive">${formatMXN(mp.total_net)}</span><span class="hd-kpi-label">нетто</span></div>
-            <div class="hd-kpi"><span class="hd-kpi-val">${mp.total_records}</span><span class="hd-kpi-label">заказов</span></div>
+            <div class="hd-kpi"><span class="hd-kpi-val">${formatMXN(mp.total_revenue)}</span><span class="hd-kpi-label">Выручка gross</span></div>
+            <div class="hd-kpi"><span class="hd-kpi-val negative">${formatMXN(mp.total_commission)}</span><span class="hd-kpi-label">Комиссия (${mp.commission_rate}%)</span></div>
+            <div class="hd-kpi"><span class="hd-kpi-val positive">${formatMXN(mp.total_net)}</span><span class="hd-kpi-label">Нетто</span></div>
+            <div class="hd-kpi"><span class="hd-kpi-val">${mp.total_records}</span><span class="hd-kpi-label">Заказов</span></div>
         `;
         const months = Object.keys(mp.by_month).sort();
         let html = '<table class="data-table compact"><thead><tr><th>Месяц</th><th class="num">Заказов</th><th class="num">Gross</th><th class="num">Комиссия</th><th class="num">Нетто</th></tr></thead><tbody>';
@@ -422,7 +379,7 @@ function renderHelpdesk(hd) {
             html += `<tr><td>${m}</td><td class="num">${d.count}</td><td class="num">${formatMXN(d.revenue)}</td>`;
             html += `<td class="num negative">${formatMXN(d.commission)}</td><td class="num positive">${formatMXN(d.net)}</td></tr>`;
         }
-        html += `<tr style="font-weight:700;border-top:2px solid var(--border)"><td>ИТОГО</td><td class="num">${tCnt}</td><td class="num">${formatMXN(tR)}</td>`;
+        html += `<tr style="font-weight:700;border-top:2px solid var(--border)"><td>Итого</td><td class="num">${tCnt}</td><td class="num">${formatMXN(tR)}</td>`;
         html += `<td class="num negative">${formatMXN(tCom)}</td><td class="num positive">${formatMXN(tN)}</td></tr>`;
         html += '</tbody></table>';
         document.getElementById('hdMPTable').innerHTML = html;
@@ -447,14 +404,8 @@ async function loadAnomalies() {
             </div>
         `).join('');
     } else {
-        list.innerHTML = '<p>Аномалий не обнаружено</p>';
+        list.innerHTML = '<p style="color:var(--text-dim);font-size:13px">Аномалий не обнаружено</p>';
     }
-}
-
-async function resetData() {
-    if (!confirm('Сбросить все данные?')) return;
-    await fetch('/api/reset', { method: 'POST' });
-    window.location.href = '/';
 }
 
 document.addEventListener('DOMContentLoaded', loadDashboard);

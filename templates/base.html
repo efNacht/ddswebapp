@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FL Cosmetics — {% block title %}Financial Reports{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     {% block head %}{% endblock %}
@@ -18,8 +20,16 @@
             <a href="/dashboard" class="nav-link {% if request.path == '/dashboard' %}active{% endif %}">Dashboard</a>
             <a href="/transactions" class="nav-link {% if request.path == '/transactions' %}active{% endif %}">Транзакции</a>
             <a href="/reports" class="nav-link {% if request.path == '/reports' %}active{% endif %}">Отчёты</a>
-            <button class="btn-theme" id="themeBtn" onclick="toggleTheme()" title="Светлая/тёмная тема">🌙</button>
-            <button class="btn btn-reset-nav" onclick="resetData()" title="Удалить все данные и начать заново">↺ Сброс</button>
+        </div>
+        <div class="nav-actions">
+            <button class="btn-icon-nav" id="themeBtn" onclick="toggleTheme()" title="Тема">
+                <svg id="themeMoon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                <svg id="themeSun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+            </button>
+            <button class="btn-nav danger" onclick="resetData()" title="Удалить все данные и начать заново">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+                Сброс
+            </button>
         </div>
         <script>
         async function resetData() {
@@ -30,15 +40,18 @@
         function toggleTheme() {
             const dark = document.body.classList.toggle('dark');
             localStorage.setItem('theme', dark ? 'dark' : 'light');
-            document.getElementById('themeBtn').textContent = dark ? '☀️' : '🌙';
+            document.getElementById('themeMoon').style.display = dark ? 'none' : '';
+            document.getElementById('themeSun').style.display = dark ? '' : 'none';
         }
         (function() {
             const t = localStorage.getItem('theme') || 'light';
             if (t === 'dark') {
                 document.body.classList.add('dark');
                 document.addEventListener('DOMContentLoaded', () => {
-                    const btn = document.getElementById('themeBtn');
-                    if (btn) btn.textContent = '☀️';
+                    const moon = document.getElementById('themeMoon');
+                    const sun = document.getElementById('themeSun');
+                    if (moon) moon.style.display = 'none';
+                    if (sun) sun.style.display = '';
                 });
             }
         })();
