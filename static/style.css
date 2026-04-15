@@ -167,18 +167,24 @@ a:hover { text-decoration: underline; }
 .header-actions { display: flex; gap: 8px; }
 
 /* ── Upload page ────────────────────────────────────────── */
-.upload-page { max-width: 560px; margin: 0 auto; padding-top: 48px; }
+.upload-page {
+    max-width: 540px; margin: 0 auto;
+    padding-top: 5vh;
+    min-height: calc(100vh - 52px - 48px);
+    display: flex; flex-direction: column;
+    align-items: stretch;
+}
 
-.upload-hero { text-align: center; margin-bottom: 28px; }
+.upload-hero { text-align: center; margin-bottom: 24px; }
 .upload-hero-icon {
-    width: 56px; height: 56px; margin: 0 auto 16px;
+    width: 48px; height: 48px; margin: 0 auto 12px;
     background: var(--primary-light);
-    border-radius: 14px;
+    border-radius: 12px;
     display: flex; align-items: center; justify-content: center;
     color: var(--primary);
 }
-.upload-hero h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.3px; margin-bottom: 6px; }
-.upload-hero p { color: var(--text-dim); font-size: 14px; }
+.upload-hero h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.3px; margin-bottom: 4px; }
+.upload-hero p { color: var(--text-dim); font-size: 13px; }
 
 .already-loaded-banner {
     display: flex; align-items: center; justify-content: space-between;
@@ -192,7 +198,7 @@ a:hover { text-decoration: underline; }
 .upload-zone {
     display: flex; flex-direction: column; align-items: center; justify-content: center;
     border: 1.5px dashed var(--border);
-    border-radius: var(--radius-lg); padding: 32px 24px;
+    border-radius: var(--radius-lg); padding: 24px 20px;
     text-align: center; cursor: pointer;
     transition: all 0.15s; background: var(--surface);
 }
@@ -441,7 +447,7 @@ a:hover { text-decoration: underline; }
 .modal-actions { display: flex; gap: 8px; margin-top: 18px; justify-content: flex-end; }
 
 /* ── Reports ────────────────────────────────────────────── */
-.reports-page { max-width: 800px; }
+.reports-page { max-width: 800px; margin: 0 auto; }
 .reports-grid { display: flex; flex-direction: column; gap: 8px; }
 .report-card {
     display: flex; align-items: center; gap: 14px;
